@@ -138,7 +138,6 @@ keybindButton.MouseButton1Click:Connect(function()
 end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if not uiActive then return end
     if gameProcessed then return end
     if waitingForKey and input.UserInputType == Enum.UserInputType.Keyboard then
         currentBind = input.KeyCode
@@ -207,26 +206,38 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Minimize/Restore Functions
+-- === Minimize / Restore ===
 minimizeUI = function()
+    local steps = 10
+    local startSize = mainFrame.Size
+    local goalSize = UDim2.new(0, 40, 0, 40)
+    for i = 1, steps do
+        local t = i / steps
+        mainFrame.Size = UDim2.new(
+            0, startSize.X.Offset + (goalSize.X.Offset - startSize.X.Offset) * t,
+            0, startSize.Y.Offset + (goalSize.Y.Offset - startSize.Y.Offset) * t
+        )
+        task.wait(0.02)
+    end
     mainFrame.Visible = false
     circle.Position = mainFrame.Position
     circle.Visible = true
-    uiActive = false
 end
 
 circle.MouseButton1Click:Connect(function()
     circle.Visible = false
     mainFrame.Visible = true
-    uiActive = true
-    -- smooth opening animation
+
     local steps = 10
-    local startSize = UDim2.new(0, 20, 0, 20)
+    local startSize = UDim2.new(0, 40, 0, 40)
     local goalSize = UDim2.new(0, 320, 0, 140)
     mainFrame.Size = startSize
     for i = 1, steps do
         local t = i / steps
-        mainFrame.Size = UDim2.new(0, startSize.X.Offset + (goalSize.X.Offset - startSize.X.Offset) * t, 0, startSize.Y.Offset + (goalSize.Y.Offset - startSize.Y.Offset) * t)
+        mainFrame.Size = UDim2.new(
+            0, startSize.X.Offset + (goalSize.X.Offset - startSize.X.Offset) * t,
+            0, startSize.Y.Offset + (goalSize.Y.Offset - startSize.Y.Offset) * t
+        )
         task.wait(0.02)
     end
     mainFrame.Size = goalSize
@@ -234,7 +245,6 @@ end)
 
 closeUI = function()
     screenGui:Destroy()
-    uiActive = false
 end
 
 -- Opening Animation
@@ -245,7 +255,8 @@ local goalSize = UDim2.new(0, 320, 0, 140)
 mainFrame.Size = startSize
 for i = 1, steps do
     local t = i / steps
-    mainFrame.Size = UDim2.new(0, startSize.X.Offset + (goalSize.X.Offset - startSize.X.Offset) * t, 0, startSize.Y.Offset + (goalSize.Y.Offset - startSize.Y.Offset) * t)
+    mainFrame.Size = UDim2.new(0, startSize.X.Offset + (goalSize.X.Offset - startSize.X.Offset) * t,
+                               0, startSize.Y.Offset + (goalSize.Y.Offset - startSize.Y.Offset) * t)
     task.wait(0.02)
 end
 mainFrame.Size = goalSize
@@ -256,7 +267,7 @@ local speedOn = false
 
 local speedFrame = Instance.new("Frame")
 speedFrame.Size = UDim2.new(0, 150, 0, 50)
-speedFrame.Position = UDim2.new(0, 10, 0, 90) -- unter Use Everything
+speedFrame.Position = UDim2.new(0, 10, 0, 90)
 speedFrame.BackgroundTransparency = 1
 speedFrame.Parent = mainFrame
 
@@ -285,21 +296,33 @@ toggleCircle.BorderSizePixel = 0
 toggleCircle.AnchorPoint = Vector2.new(0, 0)
 toggleCircle.Parent = toggleButton
 
+-- Helper to get current humanoid
+local function getHumanoid()
+    local char = Player.Character
+    if char then
+        return char:FindFirstChildWhichIsA("Humanoid")
+    end
+    return nil
+end
+
 local function updateSpeedToggle()
+    local humanoid = getHumanoid()
     if speedOn then
-        toggleCircle:TweenPosition(UDim2.new(1, -20, 0.15, 0), "Out", "Quad", 0.2, true)
-        if Player.Character and Player.Character:FindFirstChild("Humanoid") then
-            Player.Character.Humanoid.WalkSpeed = 27.7
-        end
+        toggleCircle:TweenPosition(UDim2.new(1, -toggleCircle.Size.X.Offset, 0.15, 0), "Out", "Quad", 0.2, true)
+        if humanoid then humanoid.WalkSpeed = 27.7 end
     else
         toggleCircle:TweenPosition(UDim2.new(0, 0, 0.15, 0), "Out", "Quad", 0.2, true)
-        if Player.Character and Player.Character:FindFirstChild("Humanoid") then
-            Player.Character.Humanoid.WalkSpeed = defaultSpeed
-        end
+        if humanoid then humanoid.WalkSpeed = defaultSpeed end
     end
 end
 
 toggleButton.MouseButton1Click:Connect(function()
     speedOn = not speedOn
+    updateSpeedToggle()
+end)
+
+-- Ensure speed persists after respawn
+Player.CharacterAdded:Connect(function()
+    task.wait(0.1)
     updateSpeedToggle()
 end)
