@@ -16,15 +16,8 @@ local speedEnabled = false
 --// TRACK HUMANOID
 local currentHumanoid
 
-local function applySpeed()
-	if currentHumanoid and speedEnabled then
-		currentHumanoid.WalkSpeed = ADMIN_SPEED
-	end
-end
-
 local function hookHumanoid(humanoid)
 	currentHumanoid = humanoid
-	applySpeed()
 end
 
 local function onCharacterAdded(character)
@@ -37,14 +30,7 @@ if player.Character then
 end
 player.CharacterAdded:Connect(onCharacterAdded)
 
---// ENFORCE SPEED WHILE MOVING
-RunService.Heartbeat:Connect(function()
-	if speedEnabled and currentHumanoid and currentHumanoid.MoveDirection.Magnitude > 0 then
-		currentHumanoid.WalkSpeed = ADMIN_SPEED
-	end
-end)
-
---// TOOLS FUNCTIONS
+--// TOOLS
 local function getAllTools()
 	local tools = {}
 	local backpack = player:FindFirstChild("Backpack")
@@ -81,40 +67,27 @@ screenGui.ResetOnSpawn = false
 screenGui.Parent = PlayerGui
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.fromOffset(320, 160)
+mainFrame.Size = UDim2.fromOffset(340, 220) -- made taller for new section
 mainFrame.Position = UDim2.fromOffset(100, 100)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
 mainFrame.BorderSizePixel = 0
 mainFrame.Parent = screenGui
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
 
--- Title bar
+-- Title bar & drag
 local titleBar = Instance.new("Frame")
 titleBar.Size = UDim2.new(1, 0, 0, 30)
 titleBar.BackgroundTransparency = 1
 titleBar.Parent = mainFrame
 
--- DRAGGING LOGIC (TOP BAR ONLY)
 local dragging = false
 local dragStart
 local startPos
-
-local function updateDrag(input)
-	local delta = input.Position - dragStart
-	mainFrame.Position = UDim2.new(
-		startPos.X.Scale,
-		startPos.X.Offset + delta.X,
-		startPos.Y.Scale,
-		startPos.Y.Offset + delta.Y
-	)
-end
-
 titleBar.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		dragging = true
 		dragStart = input.Position
 		startPos = mainFrame.Position
-
 		input.Changed:Connect(function()
 			if input.UserInputState == Enum.UserInputState.End then
 				dragging = false
@@ -122,14 +95,18 @@ titleBar.InputBegan:Connect(function(input)
 		end)
 	end
 end)
-
 titleBar.InputChanged:Connect(function(input)
 	if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-		updateDrag(input)
+		local delta = input.Position - dragStart
+		mainFrame.Position = UDim2.new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
 	end
 end)
 
--- Title label
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.fromOffset(10, 0)
@@ -141,7 +118,6 @@ titleLabel.TextSize = 20
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = titleBar
 
--- Top buttons
 local function topButton(text, pos)
 	local b = Instance.new("TextButton")
 	b.Size = UDim2.fromOffset(30, 30)
@@ -199,9 +175,10 @@ keybindButton.MouseButton1Click:Connect(function()
 	keybindButton.Text = "Press key..."
 end)
 
-UserInputService.InputBegan:Connect(function(input, processed)
+-- Input connection
+local inputConn
+inputConn = UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
-
 	if waitingForKey and input.UserInputType == Enum.UserInputType.Keyboard then
 		currentBind = input.KeyCode
 		currentBindLabel.Text = "Current Bind: " .. currentBind.Name
@@ -209,13 +186,12 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		waitingForKey = false
 		return
 	end
-
 	if input.KeyCode == currentBind then
 		useEverything()
 	end
 end)
 
--- Speed Toggle
+-- Speed toggle
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.fromOffset(50, 24)
 toggleButton.Position = UDim2.fromOffset(220, 95)
@@ -233,17 +209,21 @@ Instance.new("UICorner", toggleCircle).CornerRadius = UDim.new(1, 0)
 
 toggleButton.MouseButton1Click:Connect(function()
 	speedEnabled = not speedEnabled
-
 	if speedEnabled then
 		toggleCircle:TweenPosition(UDim2.fromOffset(28, 2), "Out", "Quad", 0.2, true)
 	else
 		toggleCircle:TweenPosition(UDim2.fromOffset(2, 2), "Out", "Quad", 0.2, true)
 	end
-
-	applySpeed()
 end)
 
--- Minimize / Restore
+-- Apply speed every frame
+RunService.Heartbeat:Connect(function()
+	if speedEnabled and currentHumanoid then
+		currentHumanoid.WalkSpeed = ADMIN_SPEED
+	end
+end)
+
+-- Minimize / restore
 local circle = Instance.new("TextButton")
 circle.Size = UDim2.fromOffset(40, 40)
 circle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
@@ -271,5 +251,121 @@ closeButton.MouseButton1Click:Connect(function()
 	screenGui:Destroy()
 	speedEnabled = false
 	currentHumanoid = nil
+	if inputConn then
+		inputConn:Disconnect()
+		inputConn = nil
+	end
 	script.Disabled = true
+end)
+
+--[[ =====================================================
+  CUSTOM SPEED SECTION — INDEPENDENT
+=====================================================]]--
+
+local customSpeedEnabled = false
+local customSpeedValue = 27.7
+
+-- Custom toggle
+local customToggleButton = Instance.new("TextButton")
+customToggleButton.Size = UDim2.fromOffset(50, 24)
+customToggleButton.Position = UDim2.fromOffset(220, 125)
+customToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+customToggleButton.Text = ""
+customToggleButton.Parent = mainFrame
+Instance.new("UICorner", customToggleButton).CornerRadius = UDim.new(0, 6)
+
+local customToggleCircle = Instance.new("Frame")
+customToggleCircle.Size = UDim2.fromOffset(20, 20)
+customToggleCircle.Position = UDim2.fromOffset(2, 2)
+customToggleCircle.BackgroundColor3 = Color3.fromRGB(176, 176, 176)
+customToggleCircle.Parent = customToggleButton
+Instance.new("UICorner", customToggleCircle).CornerRadius = UDim.new(1, 0)
+
+customToggleButton.MouseButton1Click:Connect(function()
+	customSpeedEnabled = not customSpeedEnabled
+	if customSpeedEnabled then
+		customToggleCircle:TweenPosition(UDim2.fromOffset(28, 2), "Out", "Quad", 0.2, true)
+	else
+		customToggleCircle:TweenPosition(UDim2.fromOffset(2, 2), "Out", "Quad", 0.2, true)
+	end
+end)
+
+-- Label for slider value
+local customSpeedLabel = Instance.new("TextLabel")
+customSpeedLabel.Size = UDim2.fromOffset(80, 20)
+customSpeedLabel.Position = UDim2.fromOffset(10, 160)
+customSpeedLabel.BackgroundTransparency = 1
+customSpeedLabel.TextColor3 = Color3.fromRGB(200,200,200)
+customSpeedLabel.Font = Enum.Font.SourceSans
+customSpeedLabel.TextSize = 14
+customSpeedLabel.Text = "Speed: " .. customSpeedValue
+customSpeedLabel.Parent = mainFrame
+
+-- Slider background
+local sliderBg = Instance.new("Frame")
+sliderBg.Size = UDim2.fromOffset(200, 10)
+sliderBg.Position = UDim2.fromOffset(90, 165)
+sliderBg.BackgroundColor3 = Color3.fromRGB(50,50,50)
+sliderBg.Parent = mainFrame
+Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(0,5)
+
+-- Slider handle
+local sliderHandle = Instance.new("Frame")
+sliderHandle.Size = UDim2.fromOffset(14,14)
+sliderHandle.Position = UDim2.fromOffset((customSpeedValue/1000)*200 - 7, -2)
+sliderHandle.BackgroundColor3 = Color3.fromRGB(176,176,176)
+sliderHandle.Parent = sliderBg
+Instance.new("UICorner", sliderHandle).CornerRadius = UDim.new(1,0)
+
+-- Drag logic for slider
+local draggingSlider = false
+sliderHandle.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		draggingSlider = true
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				draggingSlider = false
+			end
+		end)
+	end
+end)
+
+sliderHandle.InputChanged:Connect(function(input)
+	if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local pos = math.clamp(input.Position.X - sliderBg.AbsolutePosition.X,0,200)
+		sliderHandle.Position = UDim2.fromOffset(pos-7,-2)
+		customSpeedValue = math.floor((pos/200)*1000)
+		customSpeedLabel.Text = "Speed: " .. customSpeedValue
+	end
+end)
+
+-- Editable textbox
+local customSpeedBox = Instance.new("TextBox")
+customSpeedBox.Size = UDim2.fromOffset(50, 20)
+customSpeedBox.Position = UDim2.fromOffset(300,160)
+customSpeedBox.BackgroundColor3 = Color3.fromRGB(50,50,50)
+customSpeedBox.TextColor3 = Color3.new(1,1,1)
+customSpeedBox.Font = Enum.Font.SourceSans
+customSpeedBox.TextSize = 14
+customSpeedBox.Text = tostring(customSpeedValue)
+customSpeedBox.ClearTextOnFocus = false
+customSpeedBox.Parent = mainFrame
+Instance.new("UICorner", customSpeedBox).CornerRadius = UDim.new(0,4)
+
+customSpeedBox.FocusLost:Connect(function(enterPressed)
+	local num = tonumber(customSpeedBox.Text)
+	if num then
+		customSpeedValue = math.clamp(num,1,1000)
+		sliderHandle.Position = UDim2.fromOffset((customSpeedValue/1000)*200 - 7,-2)
+		customSpeedLabel.Text = "Speed: "..customSpeedValue
+	else
+		customSpeedBox.Text = tostring(customSpeedValue)
+	end
+end)
+
+-- Apply custom speed (using the same humanoid you already track)
+RunService.Heartbeat:Connect(function()
+	if customSpeedEnabled and currentHumanoid then
+		currentHumanoid.WalkSpeed = customSpeedValue
+	end
 end)
