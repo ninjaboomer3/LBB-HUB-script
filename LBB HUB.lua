@@ -1,5 +1,5 @@
--- LocalScript (full - adjustable UI size integrated)
--- All previous features preserved + resize handle added
+-- LocalScript (full updated version - custom speed slider removed, only textbox remains)
+-- All previous features preserved: instant off toggles, separate TP window, resize handle, fling, etc.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -176,8 +176,8 @@ stroke.Color = Color3.fromRGB(40, 40, 48)
 stroke.Thickness = 1.2
 stroke.Parent = mainFrame
 
--- === RESIZE HANDLE (bottom-right corner) ===
-local savedSize = {width = 380, height = 480}  -- remembered size
+-- Resize handle (bottom-right)
+local savedSize = {width = 380, height = 480}
 
 local resizeHandle = Instance.new("TextButton")
 resizeHandle.Size = UDim2.new(0, 24, 0, 24)
@@ -224,8 +224,7 @@ UserInputService.InputChanged:Connect(function(input)
 
         mainFrame.Size = UDim2.new(0, newWidth, 0, newHeight)
 
-        -- Auto-scale scroll canvases
-        local ratioMain = 300 / 480  -- original proportion
+        local ratioMain = 300 / 480
         local ratioNot  = 800 / 480
         scrollMain.CanvasSize = UDim2.new(0, 0, 0, newHeight * ratioMain)
         scrollNot.CanvasSize  = UDim2.new(0, 0, 0, newHeight * ratioNot)
@@ -240,7 +239,6 @@ resizeHandle.MouseLeave:Connect(function()
     if not resizing then resizeHandle.BackgroundColor3 = Color3.fromRGB(50, 50, 60) end
 end)
 
--- Restore saved size
 task.delay(0.1, function()
     if savedSize.width and savedSize.height then
         mainFrame.Size = UDim2.new(0, savedSize.width, 0, savedSize.height)
@@ -249,7 +247,7 @@ task.delay(0.1, function()
     end
 end)
 
--- Titlebar, minimize, bubble, drag (unchanged)
+-- Titlebar, minimize, bubble, drag, tabs, scroll frames (unchanged)
 local titleBar = Instance.new("Frame")
 titleBar.Size = UDim2.new(1,0,0,36)
 titleBar.BackgroundTransparency = 1
@@ -355,7 +353,7 @@ do
     end)
 end
 
--- Tabs & scroll frames
+-- Tabs & scroll
 local tabBar = Instance.new("Frame")
 tabBar.Size = UDim2.new(1,0,0,34)
 tabBar.Position = UDim2.new(0,0,0,36)
@@ -419,7 +417,7 @@ end
 tabMain.MouseButton1Click:Connect(function() switch(true) end)
 tabNotSAB.MouseButton1Click:Connect(function() switch(false) end)
 
--- Toggle & action helpers (unchanged)
+-- Toggle & action helpers
 local toggleUpdateFns = {}
 local function createToggle(parent, labelText, stateKey, onToggleImmediate)
     local btn = Instance.new("TextButton")
@@ -645,7 +643,6 @@ createAction(scrollNot, "Teleport to Player", function()
         tpGui:Destroy()
     end)
 
-    -- Drag TP window
     local dragging, dragStart, startPos
     tpTitleBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -667,14 +664,14 @@ createAction(scrollNot, "Teleport to Player", function()
     task.delay(0.3, fillList)
 end)
 
--- Custom UI elements (speed, jump, fly speed) - full sliders + textboxes
+-- Custom speed (only textbox, no slider)
 local speedFrame = Instance.new("Frame")
-speedFrame.Size = UDim2.new(1,0,0,84)
+speedFrame.Size = UDim2.new(1,0,0,56)  -- Reduced height since no slider
 speedFrame.BackgroundTransparency = 1
 speedFrame.Parent = scrollNot
 
 local speedLabel = Instance.new("TextLabel")
-speedLabel.Size = UDim2.new(0.5,0,0,24)
+speedLabel.Size = UDim2.new(0.6,0,0,24)
 speedLabel.Position = UDim2.new(0.05,0,0,0)
 speedLabel.BackgroundTransparency = 1
 speedLabel.Text = "Custom Speed: " .. math.floor(state.customSpeedValue)
@@ -683,20 +680,6 @@ speedLabel.Font = Enum.Font.Gotham
 speedLabel.TextSize = 13
 speedLabel.TextXAlignment = Enum.TextXAlignment.Left
 speedLabel.Parent = speedFrame
-
-local sliderBg = Instance.new("Frame")
-sliderBg.Size = UDim2.new(0.9,0,0,8)
-sliderBg.Position = UDim2.new(0.05,0,0,34)
-sliderBg.BackgroundColor3 = Color3.fromRGB(30,30,38)
-sliderBg.Parent = speedFrame
-Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1,0)
-
-local sliderFill = Instance.new("Frame")
-sliderFill.Size = UDim2.new(state.customSpeedValue/1000,0,1,0)
-sliderFill.BackgroundColor3 = Color3.fromRGB(80,130,255)
-sliderFill.BorderSizePixel = 0
-sliderFill.Parent = sliderBg
-Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1,0)
 
 local speedBox = Instance.new("TextBox")
 speedBox.Size = UDim2.new(0.3,0,0,30)
@@ -710,32 +693,10 @@ speedBox.ClearTextOnFocus = false
 speedBox.Parent = speedFrame
 Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,8)
 
-local draggingSlider = false
-sliderBg.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = true end
-end)
-sliderBg.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = false end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local rel = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
-        sliderFill.Size = UDim2.new(rel, 0, 1, 0)
-        state.customSpeedValue = math.floor(rel * 100000 + 0.5)
-        speedLabel.Text = "Custom Speed: " .. state.customSpeedValue
-        speedBox.Text = tostring(state.customSpeedValue)
-        if currentHumanoid and state.customSpeedEnabled then
-            currentHumanoid.WalkSpeed = state.customSpeedValue
-        end
-    end
-end)
-
 speedBox.FocusLost:Connect(function()
     local num = tonumber(speedBox.Text)
     if num then
         state.customSpeedValue = math.clamp(num, 1, 100000)
-        sliderFill.Size = UDim2.new(state.customSpeedValue/100000, 0, 1, 0)
         speedLabel.Text = "Custom Speed: " .. state.customSpeedValue
         speedBox.Text = tostring(state.customSpeedValue)
         if currentHumanoid and state.customSpeedEnabled then
@@ -746,14 +707,14 @@ speedBox.FocusLost:Connect(function()
     end
 end)
 
--- Jump UI
+-- Custom jump UI
 local jumpFrame = Instance.new("Frame")
 jumpFrame.Size = UDim2.new(1,0,0,56)
 jumpFrame.BackgroundTransparency = 1
 jumpFrame.Parent = scrollNot
 
 local jumpLabel = Instance.new("TextLabel")
-jumpLabel.Size = UDim2.new(0.5,0,0,24)
+jumpLabel.Size = UDim2.new(0.6,0,0,24)
 jumpLabel.Position = UDim2.new(0.05,0,0,0)
 jumpLabel.BackgroundTransparency = 1
 jumpLabel.Text = "Jump Power: " .. tostring(state.customJumpValue)
@@ -796,7 +757,7 @@ flyFrame.BackgroundTransparency = 1
 flyFrame.Parent = scrollNot
 
 local flyLabel = Instance.new("TextLabel")
-flyLabel.Size = UDim2.new(0.5,0,0,24)
+flyLabel.Size = UDim2.new(0.6,0,0,24)
 flyLabel.Position = UDim2.new(0.05,0,0,0)
 flyLabel.BackgroundTransparency = 1
 flyLabel.Text = "Fly Speed: " .. tostring(state.customFlySpeed)
@@ -908,4 +869,4 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-print("LBB Hub loaded with adjustable UI size! Drag ↘ in bottom-right corner.")
+print("LBB Hub loaded | Custom speed now textbox-only | UI resize handle active")
