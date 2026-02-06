@@ -1,5 +1,6 @@
--- LocalScript (full, drop-in replacement)
--- Services
+-- LocalScript (full - adjustable UI size integrated)
+-- All previous features preserved + resize handle added
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -8,26 +9,26 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 local PlayerGui = player:WaitForChild("PlayerGui")
 
--- Single source of truth
+-- State
 local state = {
     currentBind = Enum.KeyCode.Q,
     waitingForKey = false,
-
-    speedEnabled = false,         -- sets WalkSpeed to SPEED_27_7
-    customSpeedEnabled = false,   -- sets WalkSpeed to customSpeedValue
+    speedEnabled = false,
+    customSpeedEnabled = false,
     customSpeedValue = 27.7,
-
-    customJumpEnabled = false,    -- sets JumpPower to customJumpValue
-    customJumpValue = 50,         -- MAX now 1000
-
+    customJumpEnabled = false,
+    customJumpValue = 50,
     flyEnabled = false,
     noclipEnabled = false,
-    customFlySpeed = 65,          -- NEW: adjustable fly speed
+    customFlySpeed = 65,
+    flingEnabled = false,
 }
 
 local SPEED_27_7 = 27.7
+local DEFAULT_WALKSPEED = 16
+local DEFAULT_JUMPPOWER = 50
 
--- Character / humanoid refs
+-- Character refs
 local currentHumanoid = nil
 local currentRootPart = nil
 local character = nil
@@ -38,33 +39,24 @@ local function hookHumanoid(char)
     currentRootPart = nil
     if not char then return end
 
-    -- wait for humanoid and rootpart safely
-    currentHumanoid = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid")
-    currentRootPart = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart")
+    currentHumanoid = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 5)
+    currentRootPart = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart", 5)
 
-    -- apply only if toggles are active (do NOT force defaults otherwise)
     if currentHumanoid then
         if state.speedEnabled then currentHumanoid.WalkSpeed = SPEED_27_7 end
         if state.customSpeedEnabled then currentHumanoid.WalkSpeed = state.customSpeedValue end
         if state.customJumpEnabled then currentHumanoid.JumpPower = state.customJumpValue end
     end
 
-    -- apply noclip immediately if active
     if state.noclipEnabled then
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then part.CanCollide = false end
         end
     end
 
-    -- ensure new parts added after spawn follow noclip state
     char.DescendantAdded:Connect(function(desc)
-        if desc:IsA("BasePart") then
-            if state.noclipEnabled then
-                desc.CanCollide = false
-            else
-                -- don't forcibly restore if part added while noclip is off;
-                -- restoring collisions on off is handled by toggle action itself.
-            end
+        if desc:IsA("BasePart") and state.noclipEnabled then
+            desc.CanCollide = false
         end
     end)
 end
@@ -72,7 +64,7 @@ end
 if player.Character then hookHumanoid(player.Character) end
 player.CharacterAdded:Connect(hookHumanoid)
 
--- Tools
+-- Tools helper
 local function getAllTools()
     local tools = {}
     local backpack = player:FindFirstChild("Backpack")
@@ -93,14 +85,79 @@ local function useEverything()
     for _, t in ipairs(getAllTools()) do
         pcall(function()
             t.Parent = player.Character
-            if type(t.Activate) == "function" then
-                t:Activate()
-            end
+            if t.Activate then t:Activate() end
         end)
     end
 end
 
--- UI creation (cleaned)
+-- TP helpers
+local function getRoot(char)
+    return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso"))
+end
+
+local function isValidTarget(p)
+    if p == player then return false end
+    local char = p.Character
+    if not char then return false end
+    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    return hum and hum.Health > 0
+end
+
+local function tpTo(target)
+    local myRoot = getRoot(player.Character)
+    local tRoot = getRoot(target.Character)
+    if myRoot and tRoot then
+        myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 5, 0)
+    end
+end
+
+-- Fling
+local flingConnection = nil
+
+local function startFling()
+    if flingConnection then return end
+    local function flingLoop()
+        if not currentRootPart or not currentRootPart.Parent then return end
+        local savedCF = currentRootPart.CFrame
+        local savedLin = currentRootPart.AssemblyLinearVelocity
+        local savedAng = currentRootPart.AssemblyAngularVelocity
+
+        local randX = (math.random() - 0.5) * 240000
+        local randY = 144000 + math.random() * 72000
+        local randZ = (math.random() - 0.5) * 240000
+        currentRootPart.AssemblyLinearVelocity = Vector3.new(randX, randY, randZ)
+
+        currentRootPart.AssemblyAngularVelocity = Vector3.new(math.random(-3000,3000), math.random(-6000,6000), math.random(-3000,3000))
+
+        RunService.RenderStepped:Wait()
+
+        currentRootPart.CFrame = savedCF * CFrame.Angles(0, math.rad(30000), 0)
+        currentRootPart.AssemblyLinearVelocity = savedLin
+        currentRootPart.AssemblyAngularVelocity = savedAng
+
+        currentRootPart.AssemblyLinearVelocity += Vector3.new(0, 0.15, 0)
+    end
+    flingConnection = RunService.Heartbeat:Connect(flingLoop)
+end
+
+local function stopFling()
+    if flingConnection then
+        flingConnection:Disconnect()
+        flingConnection = nil
+    end
+    if currentRootPart then
+        currentRootPart.AssemblyLinearVelocity = Vector3.zero
+        currentRootPart.AssemblyAngularVelocity = Vector3.zero
+    end
+end
+
+player.CharacterRemoving:Connect(stopFling)
+player.CharacterAdded:Connect(function()
+    task.wait(1.2)
+    if state.flingEnabled then startFling() end
+end)
+
+-- GUI
 local sg = Instance.new("ScreenGui")
 sg.Name = "LBBHub"
 sg.ResetOnSpawn = false
@@ -119,7 +176,80 @@ stroke.Color = Color3.fromRGB(40, 40, 48)
 stroke.Thickness = 1.2
 stroke.Parent = mainFrame
 
--- titlebar (with drag)
+-- === RESIZE HANDLE (bottom-right corner) ===
+local savedSize = {width = 380, height = 480}  -- remembered size
+
+local resizeHandle = Instance.new("TextButton")
+resizeHandle.Size = UDim2.new(0, 24, 0, 24)
+resizeHandle.Position = UDim2.new(1, -24, 1, -24)
+resizeHandle.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+resizeHandle.Text = "↘"
+resizeHandle.TextColor3 = Color3.fromRGB(180, 180, 200)
+resizeHandle.Font = Enum.Font.SourceSansBold
+resizeHandle.TextSize = 16
+resizeHandle.BorderSizePixel = 0
+resizeHandle.ZIndex = 15
+resizeHandle.Parent = mainFrame
+
+local rhCorner = Instance.new("UICorner")
+rhCorner.CornerRadius = UDim.new(0, 6)
+rhCorner.Parent = resizeHandle
+
+local resizing = false
+local resizeStartMouse, resizeStartSize
+
+resizeHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        resizing = true
+        resizeStartMouse = input.Position
+        resizeStartSize = mainFrame.AbsoluteSize
+        resizeHandle.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    end
+end)
+
+resizeHandle.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        resizing = false
+        resizeHandle.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        savedSize.width = mainFrame.AbsoluteSize.X
+        savedSize.height = mainFrame.AbsoluteSize.Y
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if resizing and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - resizeStartMouse
+        local newWidth  = math.max(320, resizeStartSize.X + delta.X)
+        local newHeight = math.max(400, resizeStartSize.Y + delta.Y)
+
+        mainFrame.Size = UDim2.new(0, newWidth, 0, newHeight)
+
+        -- Auto-scale scroll canvases
+        local ratioMain = 300 / 480  -- original proportion
+        local ratioNot  = 800 / 480
+        scrollMain.CanvasSize = UDim2.new(0, 0, 0, newHeight * ratioMain)
+        scrollNot.CanvasSize  = UDim2.new(0, 0, 0, newHeight * ratioNot)
+    end
+end)
+
+resizeHandle.MouseEnter:Connect(function()
+    if not resizing then resizeHandle.BackgroundColor3 = Color3.fromRGB(70, 70, 90) end
+end)
+
+resizeHandle.MouseLeave:Connect(function()
+    if not resizing then resizeHandle.BackgroundColor3 = Color3.fromRGB(50, 50, 60) end
+end)
+
+-- Restore saved size
+task.delay(0.1, function()
+    if savedSize.width and savedSize.height then
+        mainFrame.Size = UDim2.new(0, savedSize.width, 0, savedSize.height)
+        scrollMain.CanvasSize = UDim2.new(0, 0, 0, savedSize.height * (300/480))
+        scrollNot.CanvasSize  = UDim2.new(0, 0, 0, savedSize.height * (800/480))
+    end
+end)
+
+-- Titlebar, minimize, bubble, drag (unchanged)
 local titleBar = Instance.new("Frame")
 titleBar.Size = UDim2.new(1,0,0,36)
 titleBar.BackgroundTransparency = 1
@@ -148,7 +278,6 @@ closeBtn.Parent = titleBar
 Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,8)
 closeBtn.MouseButton1Click:Connect(function() sg:Destroy() end)
 
--- minimize circle (hidden until minimized)
 local bubble = Instance.new("TextButton")
 bubble.Size = UDim2.fromOffset(48,48)
 bubble.Position = mainFrame.Position
@@ -161,7 +290,6 @@ bubble.Visible = false
 bubble.Parent = sg
 Instance.new("UICorner", bubble).CornerRadius = UDim.new(1,0)
 
--- minimize button
 local minimizeButton = Instance.new("TextButton")
 minimizeButton.Size = UDim2.fromOffset(30,30)
 minimizeButton.Position = UDim2.new(1,-74,0,3)
@@ -178,13 +306,14 @@ minimizeButton.MouseButton1Click:Connect(function()
     mainFrame.Visible = false
     bubble.Visible = true
 end)
+
 bubble.MouseButton1Click:Connect(function()
     mainFrame.Position = bubble.Position
     bubble.Visible = false
     mainFrame.Visible = true
 end)
 
--- dragging for mainFrame (manual)
+-- Dragging main frame
 do
     local dragging, dragStart, startPos
     titleBar.InputBegan:Connect(function(input)
@@ -193,26 +322,19 @@ do
             dragStart = input.Position
             startPos = mainFrame.Position
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
             end)
         end
     end)
     titleBar.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local delta = input.Position - dragStart
-            mainFrame.Position = UDim2.new(
-                startPos.X.Scale,
-                startPos.X.Offset + delta.X,
-                startPos.Y.Scale,
-                startPos.Y.Offset + delta.Y
-            )
+            mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
 end
 
--- dragging for bubble
+-- Dragging bubble
 do
     local dragging, dragStart, startPos
     bubble.InputBegan:Connect(function(input)
@@ -221,25 +343,19 @@ do
             dragStart = input.Position
             startPos = bubble.Position
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
             end)
         end
     end)
     bubble.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            bubble.Position = UDim2.new(
-                startPos.X.Scale,
-                startPos.X.Offset + delta.X,
-                startPos.Y.Scale,
-                startPos.Y.Offset + delta.Y
-            )
+            local delta = input.Position - dragStart
+            bubble.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
 end
 
--- Tabs
+-- Tabs & scroll frames
 local tabBar = Instance.new("Frame")
 tabBar.Size = UDim2.new(1,0,0,34)
 tabBar.Position = UDim2.new(0,0,0,36)
@@ -284,7 +400,7 @@ scrollNot.Size = UDim2.new(1,-16,1,-84)
 scrollNot.Position = UDim2.new(0,8,0,78)
 scrollNot.BackgroundTransparency = 1
 scrollNot.ScrollBarThickness = 4
-scrollNot.CanvasSize = UDim2.new(0,0,0,500)
+scrollNot.CanvasSize = UDim2.new(0,0,0,800)
 scrollNot.Visible = false
 scrollNot.Parent = mainFrame
 
@@ -299,10 +415,11 @@ local function switch(toMain)
     tabMain.TextColor3 = toMain and Color3.fromRGB(110,170,255) or Color3.fromRGB(170,170,180)
     tabNotSAB.TextColor3 = toMain and Color3.fromRGB(170,170,180) or Color3.fromRGB(110,170,255)
 end
+
 tabMain.MouseButton1Click:Connect(function() switch(true) end)
 tabNotSAB.MouseButton1Click:Connect(function() switch(false) end)
 
--- Toggle & action creators
+-- Toggle & action helpers (unchanged)
 local toggleUpdateFns = {}
 local function createToggle(parent, labelText, stateKey, onToggleImmediate)
     local btn = Instance.new("TextButton")
@@ -318,27 +435,37 @@ local function createToggle(parent, labelText, stateKey, onToggleImmediate)
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,9)
 
     local function update()
-        btn.Text = labelText .. "   " .. (state[stateKey] and "[ON]" or "[OFF]")
+        btn.Text = labelText .. " " .. (state[stateKey] and "[ON]" or "[OFF]")
         btn.BackgroundColor3 = state[stateKey] and Color3.fromRGB(28,44,70) or Color3.fromRGB(24,24,32)
     end
     update()
-
     btn.MouseButton1Click:Connect(function()
+        local wasOn = state[stateKey]
         state[stateKey] = not state[stateKey]
-
-        -- exclusivity: speed & customSpeed
         if stateKey == "speedEnabled" and state[stateKey] then state.customSpeedEnabled = false end
         if stateKey == "customSpeedEnabled" and state[stateKey] then state.speedEnabled = false end
 
-        -- immediate on-toggle behavior (do NOT force defaults on OFF)
-        if onToggleImmediate then
-            onToggleImmediate(state[stateKey])
+        if onToggleImmediate then onToggleImmediate(state[stateKey]) end
+
+        if not state[stateKey] and wasOn then
+            if (stateKey == "speedEnabled" or stateKey == "customSpeedEnabled") and currentHumanoid then
+                currentHumanoid.WalkSpeed = DEFAULT_WALKSPEED
+            end
+            if stateKey == "customJumpEnabled" and currentHumanoid then
+                currentHumanoid.JumpPower = DEFAULT_JUMPPOWER
+            end
+            if stateKey == "noclipEnabled" and character then
+                for _, part in ipairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = true end
+                end
+            end
+            if stateKey == "flingEnabled" then
+                stopFling()
+            end
         end
 
-        -- refresh all toggle visuals
         for _, fn in ipairs(toggleUpdateFns) do fn() end
     end)
-
     table.insert(toggleUpdateFns, update)
     return btn, update
 end
@@ -360,14 +487,13 @@ local function createAction(parent, text, callback)
     return btn
 end
 
--- MAIN TAB items
+-- MAIN TAB
 createAction(scrollMain, "Use Everything", useEverything)
 
--- Keybind button
 local keyBtn = Instance.new("TextButton")
 keyBtn.Size = UDim2.new(1,0,0,46)
 keyBtn.BackgroundColor3 = Color3.fromRGB(24,24,32)
-keyBtn.Text = "Set Keybind   (Current: " .. state.currentBind.Name .. ")"
+keyBtn.Text = "Set Keybind (Current: " .. state.currentBind.Name .. ")"
 keyBtn.TextColor3 = Color3.fromRGB(215,215,225)
 keyBtn.Font = Enum.Font.GothamSemibold
 keyBtn.TextSize = 14
@@ -382,75 +508,181 @@ keyBtn.MouseButton1Click:Connect(function()
     keyBtn.Text = "Press key..."
 end)
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
     if state.waitingForKey and input.UserInputType == Enum.UserInputType.Keyboard then
         state.currentBind = input.KeyCode
-        keyBtn.Text = "Set Keybind   (Current: " .. state.currentBind.Name .. ")"
+        keyBtn.Text = "Set Keybind (Current: " .. state.currentBind.Name .. ")"
         state.waitingForKey = false
         return
     end
-    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == state.currentBind then
+    if input.KeyCode == state.currentBind then
         useEverything()
     end
 end)
 
--- main speed 27.7 toggle
 createToggle(scrollMain, "Speed 27.7 (stealing)", "speedEnabled", function(enabled)
-    if enabled then
-        if currentHumanoid then currentHumanoid.WalkSpeed = SPEED_27_7 end
-    end
+    if enabled and currentHumanoid then currentHumanoid.WalkSpeed = SPEED_27_7 end
 end)
 
--- NOT FOR SAB tab toggles
+-- NOT FOR SAB tab
 createToggle(scrollNot, "Custom Speed", "customSpeedEnabled", function(enabled)
-    if enabled then
-        if currentHumanoid then currentHumanoid.WalkSpeed = state.customSpeedValue end
-    end
+    if enabled and currentHumanoid then currentHumanoid.WalkSpeed = state.customSpeedValue end
 end)
 
 createToggle(scrollNot, "Custom Jump", "customJumpEnabled", function(enabled)
-    if enabled then
-        if currentHumanoid then currentHumanoid.JumpPower = state.customJumpValue end
-    end
+    if enabled and currentHumanoid then currentHumanoid.JumpPower = state.customJumpValue end
 end)
 
--- noclip immediate handler
-local function updateNoclip()
-    if not character then return end
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = not state.noclipEnabled
-        end
-    end
-end
-
-createToggle(scrollNot, "Fly", "flyEnabled", function(enabled)
-    -- no immediate forced behavior needed here; heartbeat will set BodyVelocity when enabled
-end)
+createToggle(scrollNot, "Fly", "flyEnabled", function() end)
 
 createToggle(scrollNot, "Noclip", "noclipEnabled", function(enabled)
-    -- apply immediately ON or OFF
-    updateNoclip()
+    if character then
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = not enabled end
+        end
+    end
 end)
 
--- Reset All (clear toggles, visuals, and remove fly bodies; intentionally does NOT force WalkSpeed/JumpPower)
-createAction(scrollNot, "Reset All", function()
-    state.speedEnabled = false
-    state.customSpeedEnabled = false
-    state.customJumpEnabled = false
-    state.flyEnabled = false
-    state.noclipEnabled = false
-
-    -- refresh toggle visuals
-    for _, fn in ipairs(toggleUpdateFns) do fn() end
+createToggle(scrollNot, "Fling (spin + pulse)", "flingEnabled", function(enabled)
+    if enabled then startFling() else stopFling() end
 end)
 
--- Custom speed UI (slider + textbox)
+-- Separate draggable TP window
+createAction(scrollNot, "Teleport to Player", function()
+    local tpGui = Instance.new("ScreenGui")
+    tpGui.Name = "TPWindow"
+    tpGui.ResetOnSpawn = false
+    tpGui.Parent = PlayerGui
+
+    local tpFrame = Instance.new("Frame")
+    tpFrame.Size = UDim2.new(0, 340, 0, 420)
+    tpFrame.Position = UDim2.new(0.5, -170, 0.5, -210)
+    tpFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    tpFrame.BorderSizePixel = 0
+    tpFrame.Parent = tpGui
+    Instance.new("UICorner", tpFrame).CornerRadius = UDim.new(0, 14)
+
+    local tpTitleBar = Instance.new("Frame")
+    tpTitleBar.Size = UDim2.new(1,0,0,40)
+    tpTitleBar.BackgroundColor3 = Color3.fromRGB(14,14,20)
+    tpTitleBar.Parent = tpFrame
+
+    local tpTitle = Instance.new("TextLabel")
+    tpTitle.Size = UDim2.new(1,-50,1,0)
+    tpTitle.BackgroundTransparency = 1
+    tpTitle.Text = "Teleport to Player"
+    tpTitle.TextColor3 = Color3.fromRGB(200,200,255)
+    tpTitle.Font = Enum.Font.GothamBold
+    tpTitle.TextSize = 18
+    tpTitle.Parent = tpTitleBar
+
+    local tpClose = Instance.new("TextButton")
+    tpClose.Size = UDim2.new(0,36,0,36)
+    tpClose.Position = UDim2.new(1,-42,0,2)
+    tpClose.BackgroundColor3 = Color3.fromRGB(180,40,40)
+    tpClose.Text = "×"
+    tpClose.TextColor3 = Color3.new(1,1,1)
+    tpClose.Font = Enum.Font.GothamBold
+    tpClose.TextSize = 22
+    tpClose.Parent = tpTitleBar
+    Instance.new("UICorner", tpClose).CornerRadius = UDim.new(0,10)
+
+    local tpScroll = Instance.new("ScrollingFrame")
+    tpScroll.Size = UDim2.new(1,-20,1,-50)
+    tpScroll.Position = UDim2.new(0,10,0,45)
+    tpScroll.BackgroundTransparency = 1
+    tpScroll.ScrollBarThickness = 6
+    tpScroll.ScrollBarImageColor3 = Color3.fromRGB(90,90,110)
+    tpScroll.Parent = tpFrame
+
+    local tpLayout = Instance.new("UIListLayout")
+    tpLayout.Padding = UDim.new(0,8)
+    tpLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    tpLayout.Parent = tpScroll
+
+    local function fillList()
+        for _, child in ipairs(tpScroll:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+
+        local plist = {}
+        for _, p in ipairs(Players:GetPlayers()) do
+            if isValidTarget(p) then table.insert(plist, p) end
+        end
+        table.sort(plist, function(a,b) return a.Name:lower() < b.Name:lower() end)
+
+        for _, p in ipairs(plist) do
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1,0,0,48)
+            btn.BackgroundColor3 = Color3.fromRGB(35,35,45)
+            btn.Text = p.Name
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.Font = Enum.Font.GothamSemibold
+            btn.TextSize = 20
+            btn.TextScaled = true
+            btn.Parent = tpScroll
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,10)
+
+            btn.MouseEnter:Connect(function()
+                TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(55,55,70)}):Play()
+            end)
+            btn.MouseLeave:Connect(function()
+                TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35,35,45)}):Play()
+            end)
+
+            btn.MouseButton1Click:Connect(function()
+                tpTo(p)
+            end)
+        end
+
+        tpScroll.CanvasSize = UDim2.new(0,0,0, #plist * 56)
+    end
+
+    fillList()
+
+    tpClose.MouseButton1Click:Connect(function()
+        tpGui:Destroy()
+    end)
+
+    -- Drag TP window
+    local dragging, dragStart, startPos
+    tpTitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = tpFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    tpTitleBar.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            tpFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    task.delay(0.3, fillList)
+end)
+
+-- Custom UI elements (speed, jump, fly speed) - full sliders + textboxes
 local speedFrame = Instance.new("Frame")
 speedFrame.Size = UDim2.new(1,0,0,84)
 speedFrame.BackgroundTransparency = 1
 speedFrame.Parent = scrollNot
+
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Size = UDim2.new(0.5,0,0,24)
+speedLabel.Position = UDim2.new(0.05,0,0,0)
+speedLabel.BackgroundTransparency = 1
+speedLabel.Text = "Custom Speed: " .. math.floor(state.customSpeedValue)
+speedLabel.TextColor3 = Color3.fromRGB(190,190,200)
+speedLabel.Font = Enum.Font.Gotham
+speedLabel.TextSize = 13
+speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+speedLabel.Parent = speedFrame
 
 local sliderBg = Instance.new("Frame")
 sliderBg.Size = UDim2.new(0.9,0,0,8)
@@ -466,36 +698,6 @@ sliderFill.BorderSizePixel = 0
 sliderFill.Parent = sliderBg
 Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1,0)
 
-local speedLabel = Instance.new("TextLabel")
-speedLabel.Size = UDim2.new(0.5,0,0,24)
-speedLabel.Position = UDim2.new(0.05,0,0,0)
-speedLabel.BackgroundTransparency = 1
-speedLabel.Text = "Custom Speed: " .. math.floor(state.customSpeedValue)
-speedLabel.TextColor3 = Color3.fromRGB(190,190,200)
-speedLabel.Font = Enum.Font.Gotham
-speedLabel.TextSize = 13
-speedLabel.TextXAlignment = Enum.TextXAlignment.Left
-speedLabel.Parent = speedFrame
-
-local draggingSlider = false
-sliderBg.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = true end
-end)
-sliderBg.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = false end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local rel = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
-        sliderFill.Size = UDim2.new(rel, 0, 1, 0)
-        state.customSpeedValue = math.floor(rel * 100000 + 0.5)
-        speedLabel.Text = "Custom Speed: " .. state.customSpeedValue
-        if currentHumanoid and state.customSpeedEnabled then
-            currentHumanoid.WalkSpeed = state.customSpeedValue
-        end
-    end
-end)
-
 local speedBox = Instance.new("TextBox")
 speedBox.Size = UDim2.new(0.3,0,0,30)
 speedBox.Position = UDim2.new(0.65,0,0,0)
@@ -507,6 +709,28 @@ speedBox.Text = tostring(state.customSpeedValue)
 speedBox.ClearTextOnFocus = false
 speedBox.Parent = speedFrame
 Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,8)
+
+local draggingSlider = false
+sliderBg.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = true end
+end)
+sliderBg.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingSlider = false end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local rel = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+        sliderFill.Size = UDim2.new(rel, 0, 1, 0)
+        state.customSpeedValue = math.floor(rel * 100000 + 0.5)
+        speedLabel.Text = "Custom Speed: " .. state.customSpeedValue
+        speedBox.Text = tostring(state.customSpeedValue)
+        if currentHumanoid and state.customSpeedEnabled then
+            currentHumanoid.WalkSpeed = state.customSpeedValue
+        end
+    end
+end)
+
 speedBox.FocusLost:Connect(function()
     local num = tonumber(speedBox.Text)
     if num then
@@ -522,7 +746,7 @@ speedBox.FocusLost:Connect(function()
     end
 end)
 
--- Custom jump UI (simple textbox + toggle exists above)
+-- Jump UI
 local jumpFrame = Instance.new("Frame")
 jumpFrame.Size = UDim2.new(1,0,0,56)
 jumpFrame.BackgroundTransparency = 1
@@ -550,10 +774,11 @@ jumpBox.Text = tostring(state.customJumpValue)
 jumpBox.ClearTextOnFocus = false
 jumpBox.Parent = jumpFrame
 Instance.new("UICorner", jumpBox).CornerRadius = UDim.new(0,8)
+
 jumpBox.FocusLost:Connect(function()
     local num = tonumber(jumpBox.Text)
     if num then
-        state.customJumpValue = math.clamp(num, 1, 1000)  -- MAX jump 1000 now
+        state.customJumpValue = math.clamp(num, 1, 1000)
         jumpLabel.Text = "Jump Power: " .. tostring(state.customJumpValue)
         jumpBox.Text = tostring(state.customJumpValue)
         if currentHumanoid and state.customJumpEnabled then
@@ -564,7 +789,7 @@ jumpBox.FocusLost:Connect(function()
     end
 end)
 
--- NEW: Custom Fly Speed UI
+-- Fly speed UI
 local flyFrame = Instance.new("Frame")
 flyFrame.Size = UDim2.new(1,0,0,56)
 flyFrame.BackgroundTransparency = 1
@@ -592,6 +817,7 @@ flyBox.Text = tostring(state.customFlySpeed)
 flyBox.ClearTextOnFocus = false
 flyBox.Parent = flyFrame
 Instance.new("UICorner", flyBox).CornerRadius = UDim.new(0,8)
+
 flyBox.FocusLost:Connect(function()
     local num = tonumber(flyBox.Text)
     if num then
@@ -603,34 +829,50 @@ flyBox.FocusLost:Connect(function()
     end
 end)
 
--- Heartbeat: apply fly, enforce noclip while active, and apply speeds/jumps only while toggles active
+-- Reset All
+createAction(scrollNot, "Reset All", function()
+    state.speedEnabled = false
+    state.customSpeedEnabled = false
+    state.customJumpEnabled = false
+    state.flyEnabled = false
+    state.noclipEnabled = false
+    state.flingEnabled = false
+    stopFling()
+    if currentHumanoid then
+        currentHumanoid.WalkSpeed = DEFAULT_WALKSPEED
+        currentHumanoid.JumpPower = DEFAULT_JUMPPOWER
+    end
+    if character then
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = true end
+        end
+    end
+    for _, fn in ipairs(toggleUpdateFns) do fn() end
+end)
+
+-- Heartbeat
 local bodyVelocity, bodyGyro
 RunService.Heartbeat:Connect(function()
-    -- clean when no humanoid
     if not currentHumanoid or currentHumanoid.Health <= 0 then
         if bodyVelocity then bodyVelocity:Destroy() bodyVelocity = nil end
         if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
         return
     end
 
-    -- Speed handling: only write when toggles active (do NOT force defaults otherwise)
     if state.speedEnabled then
-        if currentHumanoid.WalkSpeed ~= SPEED_27_7 then currentHumanoid.WalkSpeed = SPEED_27_7 end
+        currentHumanoid.WalkSpeed = SPEED_27_7
     elseif state.customSpeedEnabled then
-        if currentHumanoid.WalkSpeed ~= state.customSpeedValue then currentHumanoid.WalkSpeed = state.customSpeedValue end
+        currentHumanoid.WalkSpeed = state.customSpeedValue
     end
 
-    -- Jump handling: only when customJumpEnabled
     if state.customJumpEnabled then
-        if currentHumanoid.JumpPower ~= state.customJumpValue then currentHumanoid.JumpPower = state.customJumpValue end
+        currentHumanoid.JumpPower = state.customJumpValue
     end
 
-    -- Fly handling
     if state.flyEnabled and currentRootPart then
         if not bodyVelocity then
             bodyVelocity = Instance.new("BodyVelocity")
             bodyVelocity.MaxForce = Vector3.new(1e6,1e6,1e6)
-            bodyVelocity.Velocity = Vector3.new()
             bodyVelocity.Parent = currentRootPart
         end
         if not bodyGyro then
@@ -641,12 +883,12 @@ RunService.Heartbeat:Connect(function()
         end
 
         local moveDir = Vector3.new()
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Vector3.new(0,0,-1) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir + Vector3.new(0,0,1) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir + Vector3.new(-1,0,0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Vector3.new(1,0,0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir + Vector3.new(0,-1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir += Vector3.new(0,0,-1) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir += Vector3.new(0,0,1) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir += Vector3.new(-1,0,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir += Vector3.new(1,0,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir += Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir += Vector3.new(0,-1,0) end
 
         local cam = workspace.CurrentCamera
         if cam then
@@ -659,12 +901,11 @@ RunService.Heartbeat:Connect(function()
         if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
     end
 
-    -- Noclip enforcement while enabled (keeps new/renamed parts handled)
     if state.noclipEnabled and character then
         for _, p in ipairs(character:GetDescendants()) do
-            if p:IsA("BasePart") and p.CanCollide then
-                p.CanCollide = false
-            end
+            if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
         end
     end
 end)
+
+print("LBB Hub loaded with adjustable UI size! Drag ↘ in bottom-right corner.")
