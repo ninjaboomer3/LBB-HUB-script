@@ -18,10 +18,11 @@ local state = {
     customSpeedValue = 27.7,
 
     customJumpEnabled = false,    -- sets JumpPower to customJumpValue
-    customJumpValue = 50,
+    customJumpValue = 50,         -- MAX now 1000
 
     flyEnabled = false,
     noclipEnabled = false,
+    customFlySpeed = 65,          -- NEW: adjustable fly speed
 }
 
 local SPEED_27_7 = 27.7
@@ -173,7 +174,6 @@ minimizeButton.Parent = titleBar
 Instance.new("UICorner", minimizeButton).CornerRadius = UDim.new(0,6)
 
 minimizeButton.MouseButton1Click:Connect(function()
-    -- hide main and show bubble at same pixel position
     bubble.Position = mainFrame.Position
     mainFrame.Visible = false
     bubble.Visible = true
@@ -229,7 +229,6 @@ do
     end)
     bubble.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
             bubble.Position = UDim2.new(
                 startPos.X.Scale,
                 startPos.X.Offset + delta.X,
@@ -445,9 +444,6 @@ createAction(scrollNot, "Reset All", function()
 
     -- refresh toggle visuals
     for _, fn in ipairs(toggleUpdateFns) do fn() end
-
-    -- remove any fly bodies if present (they exist in heartbeat scope)
-    -- we'll destroy these in heartbeat cleanup via checking flags
 end)
 
 -- Custom speed UI (slider + textbox)
@@ -492,7 +488,7 @@ UserInputService.InputChanged:Connect(function(input)
     if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
         local rel = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
         sliderFill.Size = UDim2.new(rel, 0, 1, 0)
-        state.customSpeedValue = math.floor(rel * 1000 + 0.5)
+        state.customSpeedValue = math.floor(rel * 100000 + 0.5)
         speedLabel.Text = "Custom Speed: " .. state.customSpeedValue
         if currentHumanoid and state.customSpeedEnabled then
             currentHumanoid.WalkSpeed = state.customSpeedValue
@@ -514,8 +510,8 @@ Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,8)
 speedBox.FocusLost:Connect(function()
     local num = tonumber(speedBox.Text)
     if num then
-        state.customSpeedValue = math.clamp(num, 1, 1000)
-        sliderFill.Size = UDim2.new(state.customSpeedValue/1000, 0, 1, 0)
+        state.customSpeedValue = math.clamp(num, 1, 100000)
+        sliderFill.Size = UDim2.new(state.customSpeedValue/100000, 0, 1, 0)
         speedLabel.Text = "Custom Speed: " .. state.customSpeedValue
         speedBox.Text = tostring(state.customSpeedValue)
         if currentHumanoid and state.customSpeedEnabled then
@@ -557,7 +553,7 @@ Instance.new("UICorner", jumpBox).CornerRadius = UDim.new(0,8)
 jumpBox.FocusLost:Connect(function()
     local num = tonumber(jumpBox.Text)
     if num then
-        state.customJumpValue = math.clamp(num, 1, 200)
+        state.customJumpValue = math.clamp(num, 1, 1000)  -- MAX jump 1000 now
         jumpLabel.Text = "Jump Power: " .. tostring(state.customJumpValue)
         jumpBox.Text = tostring(state.customJumpValue)
         if currentHumanoid and state.customJumpEnabled then
@@ -565,6 +561,45 @@ jumpBox.FocusLost:Connect(function()
         end
     else
         jumpBox.Text = tostring(state.customJumpValue)
+    end
+end)
+
+-- NEW: Custom Fly Speed UI
+local flyFrame = Instance.new("Frame")
+flyFrame.Size = UDim2.new(1,0,0,56)
+flyFrame.BackgroundTransparency = 1
+flyFrame.Parent = scrollNot
+
+local flyLabel = Instance.new("TextLabel")
+flyLabel.Size = UDim2.new(0.5,0,0,24)
+flyLabel.Position = UDim2.new(0.05,0,0,0)
+flyLabel.BackgroundTransparency = 1
+flyLabel.Text = "Fly Speed: " .. tostring(state.customFlySpeed)
+flyLabel.TextColor3 = Color3.fromRGB(190,190,200)
+flyLabel.Font = Enum.Font.Gotham
+flyLabel.TextSize = 13
+flyLabel.TextXAlignment = Enum.TextXAlignment.Left
+flyLabel.Parent = flyFrame
+
+local flyBox = Instance.new("TextBox")
+flyBox.Size = UDim2.new(0.3,0,0,30)
+flyBox.Position = UDim2.new(0.65,0,0,0)
+flyBox.BackgroundColor3 = Color3.fromRGB(24,24,32)
+flyBox.TextColor3 = Color3.new(1,1,1)
+flyBox.Font = Enum.Font.Gotham
+flyBox.TextSize = 13
+flyBox.Text = tostring(state.customFlySpeed)
+flyBox.ClearTextOnFocus = false
+flyBox.Parent = flyFrame
+Instance.new("UICorner", flyBox).CornerRadius = UDim.new(0,8)
+flyBox.FocusLost:Connect(function()
+    local num = tonumber(flyBox.Text)
+    if num then
+        state.customFlySpeed = math.clamp(num, 1, 1000000000)
+        flyLabel.Text = "Fly Speed: " .. tostring(state.customFlySpeed)
+        flyBox.Text = tostring(state.customFlySpeed)
+    else
+        flyBox.Text = tostring(state.customFlySpeed)
     end
 end)
 
@@ -615,7 +650,7 @@ RunService.Heartbeat:Connect(function()
 
         local cam = workspace.CurrentCamera
         if cam then
-            local worldMove = cam.CFrame:VectorToWorldSpace(moveDir) * 65
+            local worldMove = cam.CFrame:VectorToWorldSpace(moveDir) * state.customFlySpeed
             bodyVelocity.Velocity = worldMove
             bodyGyro.CFrame = cam.CFrame
         end
