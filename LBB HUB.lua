@@ -1,5 +1,4 @@
--- LBB Hub - Full LocalScript (custom inputs moved under toggles)
--- Custom speed/jump/fly textboxes now appear directly below their toggle buttons
+-- LBB Hub - Full LocalScript (fixed checkpoint keybind logic + smaller fitting buttons in menu)
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -12,10 +11,10 @@ local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 local PlayerGui = player:WaitForChild("PlayerGui")
 
--- State (unchanged)
+-- State
 local state = {
-    currentBind = Enum.KeyCode.Q,
-    waitingForKey = false,
+    currentBind = Enum.KeyCode.Q,               -- main hub global keybind (Use Everything)
+    waitingForKey = false,                      -- main hub keybind wait flag
     speedEnabled = false,
     customSpeedEnabled = false,
     customSpeedValue = 27.7,
@@ -30,13 +29,18 @@ local state = {
     fullbright = false,
     playerESP = false,
     autoRejoin = false,
+    checkpointPos = nil,
+    checkpointIndicator = nil,
+    checkpointKeybind = nil,                    -- SEPARATE keybind for checkpoint teleport
 }
+
+local checkpointWaitingForKey = false           -- separate flag for checkpoint keybind input
 
 local SPEED_27_7 = 27.7
 local DEFAULT_WALKSPEED = 16
 local DEFAULT_JUMPPOWER = 50
 
--- Character refs (unchanged)
+-- Character refs
 local currentHumanoid = nil
 local currentRootPart = nil
 local character = nil
@@ -72,7 +76,7 @@ end
 if player.Character then hookHumanoid(player.Character) end
 player.CharacterAdded:Connect(hookHumanoid)
 
--- Tools helper (unchanged)
+-- Tools helper
 local function getAllTools()
     local tools = {}
     local backpack = player:FindFirstChild("Backpack")
@@ -98,7 +102,7 @@ local function useEverything()
     end
 end
 
--- TP helpers (unchanged)
+-- TP helpers
 local function getRoot(char)
     return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso"))
 end
@@ -119,7 +123,200 @@ local function tpTo(target)
     end
 end
 
--- Fling (unchanged)
+-- Checkpoint functions
+local function setCheckpoint()
+    if currentRootPart then
+        state.checkpointPos = currentRootPart.Position
+        print("[Checkpoint] Set at: " .. tostring(state.checkpointPos))
+
+        if state.checkpointIndicator then
+            state.checkpointIndicator:Destroy()
+            state.checkpointIndicator = nil
+        end
+
+        local part = Instance.new("Part")
+        part.Size = Vector3.new(1,1,1)
+        part.Position = state.checkpointPos
+        part.Anchored = true
+        part.CanCollide = false
+        part.Transparency = 1
+        part.Parent = workspace
+
+        local bb = Instance.new("BillboardGui")
+        bb.Name = "CheckpointIndicator"
+        bb.Adornee = part
+        bb.Size = UDim2.new(0,140,0,50)
+        bb.StudsOffset = Vector3.new(0,4,0)
+        bb.AlwaysOnTop = true
+        bb.Parent = part
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1,0,1,0)
+        label.BackgroundTransparency = 1
+        label.Text = "Checkpoint"
+        label.TextColor3 = Color3.fromRGB(0,255,150)
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 20
+        label.Parent = bb
+
+        local glow = Instance.new("PointLight")
+        glow.Color = Color3.fromRGB(0,255,150)
+        glow.Brightness = 3
+        glow.Range = 20
+        glow.Parent = part
+
+        state.checkpointIndicator = part
+    end
+end
+
+local function teleportToCheckpoint()
+    if state.checkpointPos and currentRootPart then
+        currentRootPart.CFrame = CFrame.new(state.checkpointPos + Vector3.new(0,5,0))
+        print("[Checkpoint] Teleported")
+    else
+        print("[Checkpoint] No position set")
+    end
+end
+
+-- Checkpoint UI (small, draggable, stays open, buttons same style as main hub)
+local function openCheckpointUI()
+    local cpGui = Instance.new("ScreenGui")
+    cpGui.Name = "CheckpointWindow"
+    cpGui.ResetOnSpawn = false
+    cpGui.Parent = PlayerGui
+
+    local cpFrame = Instance.new("Frame")
+    cpFrame.Size = UDim2.new(0, 220, 0, 140)
+    cpFrame.Position = UDim2.new(0.5, -110, 0.5, -70)
+    cpFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+    cpFrame.BorderSizePixel = 0
+    cpFrame.Parent = cpGui
+    Instance.new("UICorner", cpFrame).CornerRadius = UDim.new(0, 10)
+
+    -- Draggable title bar
+    local cpTitleBar = Instance.new("Frame")
+    cpTitleBar.Size = UDim2.new(1, 0, 0, 32)
+    cpTitleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+    cpTitleBar.Parent = cpFrame
+
+    local cpTitle = Instance.new("TextLabel")
+    cpTitle.Size = UDim2.new(1, -40, 1, 0)
+    cpTitle.BackgroundTransparency = 1
+    cpTitle.Text = "Checkpoint"
+    cpTitle.TextColor3 = Color3.fromRGB(200, 255, 220)
+    cpTitle.Font = Enum.Font.GothamBold
+    cpTitle.TextSize = 14
+    cpTitle.TextXAlignment = Enum.TextXAlignment.Left
+    cpTitle.Parent = cpTitleBar
+    local pad = Instance.new("UIPadding", cpTitle)
+    pad.PaddingLeft = UDim.new(0, 12)
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 28, 0, 28)
+    closeBtn.Position = UDim2.new(1, -34, 0, 2)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+    closeBtn.Text = "×"
+    closeBtn.TextColor3 = Color3.new(1,1,1)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 18
+    closeBtn.Parent = cpTitleBar
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        cpGui:Destroy()
+    end)
+
+    -- Dragging logic
+    local dragging, dragStart, startPos
+    cpTitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = cpFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    cpTitleBar.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            cpFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    -- Buttons - same style as main hub
+    local tpBtn = Instance.new("TextButton")
+    tpBtn.Size = UDim2.new(0.9, 0, 0, 32)           -- smaller height
+    tpBtn.Position = UDim2.new(0.05, 0, 0.26, 0)
+    tpBtn.BackgroundColor3 = Color3.fromRGB(24,24,32)
+    tpBtn.Text = "Teleport"
+    tpBtn.TextColor3 = Color3.new(1,1,1)
+    tpBtn.Font = Enum.Font.GothamSemibold
+    tpBtn.TextSize = 14
+    tpBtn.Parent = cpFrame
+    Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0, 9)
+
+    tpBtn.MouseButton1Click:Connect(function()
+        teleportToCheckpoint()
+        -- stays open
+    end)
+
+    local setBtn = Instance.new("TextButton")
+    setBtn.Size = UDim2.new(0.9, 0, 0, 32)
+    setBtn.Position = UDim2.new(0.05, 0, 0.52, 0)
+    setBtn.BackgroundColor3 = Color3.fromRGB(24,24,32)
+    setBtn.Text = "Set Checkpoint"
+    setBtn.TextColor3 = Color3.new(1,1,1)
+    setBtn.Font = Enum.Font.GothamSemibold
+    setBtn.TextSize = 14
+    setBtn.Parent = cpFrame
+    Instance.new("UICorner", setBtn).CornerRadius = UDim.new(0, 9)
+
+    setBtn.MouseButton1Click:Connect(function()
+        setCheckpoint()
+        -- stays open
+    end)
+
+    local keyBtn = Instance.new("TextButton")
+    keyBtn.Size = UDim2.new(0.9, 0, 0, 32)
+    keyBtn.Position = UDim2.new(0.05, 0, 0.78, 0)
+    keyBtn.BackgroundColor3 = Color3.fromRGB(24,24,32)
+    keyBtn.Text = "Set Keybind"
+    keyBtn.TextColor3 = Color3.new(1,1,1)
+    keyBtn.Font = Enum.Font.GothamSemibold
+    keyBtn.TextSize = 14
+    keyBtn.Parent = cpFrame
+    Instance.new("UICorner", keyBtn).CornerRadius = UDim.new(0, 9)
+
+    keyBtn.MouseButton1Click:Connect(function()
+        checkpointWaitingForKey = true
+        keyBtn.Text = "Press any key..."
+    end)
+
+    -- Handle checkpoint keybind input (separate connection & flag)
+    local keyConnection
+    keyConnection = UserInputService.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if checkpointWaitingForKey and input.UserInputType == Enum.UserInputType.Keyboard then
+            state.checkpointKeybind = input.KeyCode
+            keyBtn.Text = "Key: " .. input.KeyCode.Name
+            checkpointWaitingForKey = false
+            print("[Checkpoint Key] Set to: " .. input.KeyCode.Name)
+            keyConnection:Disconnect()
+        end
+    end)
+end
+
+-- Listen for checkpoint keybind press (separate from main keybind)
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if state.checkpointKeybind and input.KeyCode == state.checkpointKeybind then
+        teleportToCheckpoint()
+    end
+end)
+
+-- Fling
 local flingConnection = nil
 
 local function startFling()
@@ -163,6 +360,9 @@ player.CharacterRemoving:Connect(stopFling)
 player.CharacterAdded:Connect(function()
     task.wait(1.2)
     if state.flingEnabled then startFling() end
+    if state.checkpointPos then
+        task.delay(0.5, setCheckpoint)
+    end
 end)
 
 -- GUI
@@ -184,7 +384,7 @@ stroke.Color = Color3.fromRGB(40, 40, 48)
 stroke.Thickness = 1.2
 stroke.Parent = mainFrame
 
--- Resize handle (unchanged)
+-- Resize handle
 local savedSize = {width = 380, height = 480}
 
 local resizeHandle = Instance.new("TextButton")
@@ -255,7 +455,7 @@ task.delay(0.1, function()
     end
 end)
 
--- Titlebar, minimize, bubble, drag (unchanged)
+-- Titlebar, minimize, bubble, drag
 local titleBar = Instance.new("Frame")
 titleBar.Size = UDim2.new(1,0,0,36)
 titleBar.BackgroundTransparency = 1
@@ -319,7 +519,7 @@ bubble.MouseButton1Click:Connect(function()
     mainFrame.Visible = true
 end)
 
--- Dragging (unchanged)
+-- Dragging main frame
 do
     local dragging, dragStart, startPos
     titleBar.InputBegan:Connect(function(input)
@@ -340,6 +540,7 @@ do
     end)
 end
 
+-- Dragging bubble
 do
     local dragging, dragStart, startPos
     bubble.InputBegan:Connect(function(input)
@@ -424,7 +625,7 @@ end
 tabMain.MouseButton1Click:Connect(function() switch(true) end)
 tabNotSAB.MouseButton1Click:Connect(function() switch(false) end)
 
--- Toggle & action helpers (unchanged)
+-- Toggle & action helpers
 local toggleUpdateFns = {}
 local function createToggle(parent, labelText, stateKey, onToggleImmediate)
     local btn = Instance.new("TextButton")
@@ -576,11 +777,11 @@ local function createSection(parent, title)
 end
 
 local movementSection = createSection(scrollNot, "Movement")
-local visualsSection  = createSection(scrollNot, "Visuals")
-local utilitySection  = createSection(scrollNot, "Utility")
+local visualsSection = createSection(scrollNot, "Visuals")
+local utilitySection = createSection(scrollNot, "Utility")
 
--- Movement section with toggles + inputs right below
-local customSpeedToggle, updateSpeedToggle = createToggle(movementSection, "Custom Speed", "customSpeedEnabled", function(enabled)
+-- Movement
+createToggle(movementSection, "Custom Speed", "customSpeedEnabled", function(enabled)
     if enabled and currentHumanoid then currentHumanoid.WalkSpeed = state.customSpeedValue end
 end)
 
@@ -626,8 +827,7 @@ speedBox.FocusLost:Connect(function()
     end
 end)
 
--- Custom Jump with input below toggle
-local customJumpToggle, updateJumpToggle = createToggle(movementSection, "Custom Jump", "customJumpEnabled", function(enabled)
+createToggle(movementSection, "Custom Jump", "customJumpEnabled", function(enabled)
     if enabled and currentHumanoid then currentHumanoid.JumpPower = state.customJumpValue end
 end)
 
@@ -673,8 +873,7 @@ jumpBox.FocusLost:Connect(function()
     end
 end)
 
--- Custom Fly Speed with input below toggle
-local flyToggle, updateFlyToggle = createToggle(movementSection, "Fly", "flyEnabled", function() end)
+createToggle(movementSection, "Fly", "flyEnabled", function() end)
 
 local flyInputFrame = Instance.new("Frame")
 flyInputFrame.Size = UDim2.new(1,0,0,56)
@@ -715,7 +914,6 @@ flyBox.FocusLost:Connect(function()
     end
 end)
 
--- Other toggles in Movement
 createToggle(movementSection, "Noclip", "noclipEnabled", function(enabled)
     if character then
         for _, part in ipairs(character:GetDescendants()) do
@@ -732,7 +930,7 @@ createToggle(movementSection, "Infinite Jump", "infiniteJumpEnabled", function()
 
 createToggle(movementSection, "No Fall Damage", "noFallDamage", function() end)
 
--- Visuals (unchanged)
+-- Visuals
 createToggle(visualsSection, "Fullbright", "fullbright", function(enabled)
     if enabled then
         Lighting.Brightness = 2
@@ -758,36 +956,9 @@ createToggle(visualsSection, "Player ESP", "playerESP", function(enabled)
     end
 end)
 
--- Utility (unchanged)
-createAction(utilitySection, "Server Hop", function()
-    local success, err = pcall(function()
-        local cursor = ""
-        local servers = {}
-        repeat
-            local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100" .. cursor
-            local req = HttpService:JSONDecode(game:HttpGet(url))
-            for _, v in ipairs(req.data) do
-                if v.playing < v.maxPlayers and v.id ~= game.JobId then
-                    table.insert(servers, v.id)
-                end
-            end
-            cursor = req.nextPageCursor and "&cursor=" .. req.nextPageCursor or ""
-        until not req.nextPageCursor
-        if #servers > 0 then
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1,#servers)])
-        else
-            print("No servers found")
-        end
-    end)
-    if not success then
-        print("Server Hop failed: " .. tostring(err))
-    end
-end)
-
-createToggle(utilitySection, "Auto Rejoin on Kick", "autoRejoin", function() end)
-
+-- Utility
+createAction(utilitySection, "Checkpoint Menu", openCheckpointUI)
 createAction(utilitySection, "Teleport to Player", function()
-    -- your existing separate TP window code (unchanged)
     local tpGui = Instance.new("ScreenGui")
     tpGui.Name = "TPWindow"
     tpGui.ResetOnSpawn = false
@@ -904,8 +1075,34 @@ createAction(utilitySection, "Teleport to Player", function()
     task.delay(0.3, fillList)
 end)
 
--- Reset All
-createAction(scrollNot, "Reset All", function()
+createAction(utilitySection, "Server Hop", function()
+    local success, err = pcall(function()
+        local cursor = ""
+        local servers = {}
+        repeat
+            local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100" .. cursor
+            local req = HttpService:JSONDecode(game:HttpGet(url))
+            for _, v in ipairs(req.data) do
+                if v.playing < v.maxPlayers and v.id ~= game.JobId then
+                    table.insert(servers, v.id)
+                end
+            end
+            cursor = req.nextPageCursor and "&cursor=" .. req.nextPageCursor or ""
+        until not req.nextPageCursor
+        if #servers > 0 then
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1,#servers)])
+        else
+            print("No servers found")
+        end
+    end)
+    if not success then
+        print("Server Hop failed: " .. tostring(err))
+    end
+end)
+
+createToggle(utilitySection, "Auto Rejoin on Kick", "autoRejoin", function() end)
+
+createAction(utilitySection, "Reset All", function()
     state.speedEnabled = false
     state.customSpeedEnabled = false
     state.customJumpEnabled = false
@@ -917,6 +1114,12 @@ createAction(scrollNot, "Reset All", function()
     state.fullbright = false
     state.playerESP = false
     state.autoRejoin = false
+    state.checkpointPos = nil
+    state.checkpointKeybind = nil
+    if state.checkpointIndicator then
+        state.checkpointIndicator:Destroy()
+        state.checkpointIndicator = nil
+    end
     stopFling()
     if currentHumanoid then
         currentHumanoid.WalkSpeed = DEFAULT_WALKSPEED
@@ -959,19 +1162,6 @@ RunService.Heartbeat:Connect(function()
         currentHumanoid.JumpPower = state.customJumpValue
     end
 
-    -- Infinite Jump (press-based)
-    -- (handled in InputBegan)
-
-    -- No Fall Damage
-    if state.noFallDamage and currentHumanoid:GetState() == Enum.HumanoidStateType.Freefall then
-        currentRootPart.AssemblyLinearVelocity = Vector3.new(
-            currentRootPart.AssemblyLinearVelocity.X,
-            0,
-            currentRootPart.AssemblyLinearVelocity.Z
-        )
-    end
-
-    -- Fly
     if state.flyEnabled and currentRootPart then
         if not bodyVelocity then
             bodyVelocity = Instance.new("BodyVelocity")
@@ -1071,4 +1261,4 @@ game:GetService("Players").PlayerRemoving:Connect(function(plr)
     end
 end)
 
-print("LBB Hub loaded - custom inputs now directly under toggles | all features active")
+print("LBB Hub loaded | Checkpoint keybind fully separate & changeable multiple times | checkpoint menu buttons smaller & matching style")
