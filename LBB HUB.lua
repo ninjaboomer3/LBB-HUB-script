@@ -1,15 +1,18 @@
--- LocalScript (full updated version - custom speed slider removed, only textbox remains)
--- All previous features preserved: instant off toggles, separate TP window, resize handle, fling, etc.
+-- LBB Hub - Full LocalScript (custom inputs moved under toggles)
+-- Custom speed/jump/fly textboxes now appear directly below their toggle buttons
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local TeleportService = game:GetService("TeleportService")
+local Lighting = game:GetService("Lighting")
+local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 local PlayerGui = player:WaitForChild("PlayerGui")
 
--- State
+-- State (unchanged)
 local state = {
     currentBind = Enum.KeyCode.Q,
     waitingForKey = false,
@@ -22,13 +25,18 @@ local state = {
     noclipEnabled = false,
     customFlySpeed = 65,
     flingEnabled = false,
+    infiniteJumpEnabled = false,
+    noFallDamage = false,
+    fullbright = false,
+    playerESP = false,
+    autoRejoin = false,
 }
 
 local SPEED_27_7 = 27.7
 local DEFAULT_WALKSPEED = 16
 local DEFAULT_JUMPPOWER = 50
 
--- Character refs
+-- Character refs (unchanged)
 local currentHumanoid = nil
 local currentRootPart = nil
 local character = nil
@@ -64,7 +72,7 @@ end
 if player.Character then hookHumanoid(player.Character) end
 player.CharacterAdded:Connect(hookHumanoid)
 
--- Tools helper
+-- Tools helper (unchanged)
 local function getAllTools()
     local tools = {}
     local backpack = player:FindFirstChild("Backpack")
@@ -90,7 +98,7 @@ local function useEverything()
     end
 end
 
--- TP helpers
+-- TP helpers (unchanged)
 local function getRoot(char)
     return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso"))
 end
@@ -111,7 +119,7 @@ local function tpTo(target)
     end
 end
 
--- Fling
+-- Fling (unchanged)
 local flingConnection = nil
 
 local function startFling()
@@ -176,7 +184,7 @@ stroke.Color = Color3.fromRGB(40, 40, 48)
 stroke.Thickness = 1.2
 stroke.Parent = mainFrame
 
--- Resize handle (bottom-right)
+-- Resize handle (unchanged)
 local savedSize = {width = 380, height = 480}
 
 local resizeHandle = Instance.new("TextButton")
@@ -225,7 +233,7 @@ UserInputService.InputChanged:Connect(function(input)
         mainFrame.Size = UDim2.new(0, newWidth, 0, newHeight)
 
         local ratioMain = 300 / 480
-        local ratioNot  = 800 / 480
+        local ratioNot  = 1200 / 480
         scrollMain.CanvasSize = UDim2.new(0, 0, 0, newHeight * ratioMain)
         scrollNot.CanvasSize  = UDim2.new(0, 0, 0, newHeight * ratioNot)
     end
@@ -243,11 +251,11 @@ task.delay(0.1, function()
     if savedSize.width and savedSize.height then
         mainFrame.Size = UDim2.new(0, savedSize.width, 0, savedSize.height)
         scrollMain.CanvasSize = UDim2.new(0, 0, 0, savedSize.height * (300/480))
-        scrollNot.CanvasSize  = UDim2.new(0, 0, 0, savedSize.height * (800/480))
+        scrollNot.CanvasSize  = UDim2.new(0, 0, 0, savedSize.height * (1200/480))
     end
 end)
 
--- Titlebar, minimize, bubble, drag, tabs, scroll frames (unchanged)
+-- Titlebar, minimize, bubble, drag (unchanged)
 local titleBar = Instance.new("Frame")
 titleBar.Size = UDim2.new(1,0,0,36)
 titleBar.BackgroundTransparency = 1
@@ -311,7 +319,7 @@ bubble.MouseButton1Click:Connect(function()
     mainFrame.Visible = true
 end)
 
--- Dragging main frame
+-- Dragging (unchanged)
 do
     local dragging, dragStart, startPos
     titleBar.InputBegan:Connect(function(input)
@@ -332,7 +340,6 @@ do
     end)
 end
 
--- Dragging bubble
 do
     local dragging, dragStart, startPos
     bubble.InputBegan:Connect(function(input)
@@ -353,7 +360,7 @@ do
     end)
 end
 
--- Tabs & scroll
+-- Tabs
 local tabBar = Instance.new("Frame")
 tabBar.Size = UDim2.new(1,0,0,34)
 tabBar.Position = UDim2.new(0,0,0,36)
@@ -398,7 +405,7 @@ scrollNot.Size = UDim2.new(1,-16,1,-84)
 scrollNot.Position = UDim2.new(0,8,0,78)
 scrollNot.BackgroundTransparency = 1
 scrollNot.ScrollBarThickness = 4
-scrollNot.CanvasSize = UDim2.new(0,0,0,800)
+scrollNot.CanvasSize = UDim2.new(0,0,0,1200)
 scrollNot.Visible = false
 scrollNot.Parent = mainFrame
 
@@ -417,7 +424,7 @@ end
 tabMain.MouseButton1Click:Connect(function() switch(true) end)
 tabNotSAB.MouseButton1Click:Connect(function() switch(false) end)
 
--- Toggle & action helpers
+-- Toggle & action helpers (unchanged)
 local toggleUpdateFns = {}
 local function createToggle(parent, labelText, stateKey, onToggleImmediate)
     local btn = Instance.new("TextButton")
@@ -457,8 +464,20 @@ local function createToggle(parent, labelText, stateKey, onToggleImmediate)
                     if part:IsA("BasePart") then part.CanCollide = true end
                 end
             end
-            if stateKey == "flingEnabled" then
-                stopFling()
+            if stateKey == "flingEnabled" then stopFling() end
+            if stateKey == "fullbright" then
+                Lighting.Brightness = 1
+                Lighting.GlobalShadows = true
+                Lighting.FogEnd = 100000
+                Lighting.Ambient = Color3.new(0.5,0.5,0.5)
+            end
+            if stateKey == "playerESP" then
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p.Character then
+                        local head = p.Character:FindFirstChild("Head")
+                        if head and head:FindFirstChild("ESP") then head.ESP:Destroy() end
+                    end
+                end
             end
         end
 
@@ -523,18 +542,181 @@ createToggle(scrollMain, "Speed 27.7 (stealing)", "speedEnabled", function(enabl
     if enabled and currentHumanoid then currentHumanoid.WalkSpeed = SPEED_27_7 end
 end)
 
--- NOT FOR SAB tab
-createToggle(scrollNot, "Custom Speed", "customSpeedEnabled", function(enabled)
+-- NOT FOR SAB - Sections
+local function createSection(parent, title)
+    local sectionFrame = Instance.new("Frame")
+    sectionFrame.Size = UDim2.new(1,0,0,0)
+    sectionFrame.BackgroundTransparency = 1
+    sectionFrame.Parent = parent
+    sectionFrame.AutomaticSize = Enum.AutomaticSize.Y
+
+    local header = Instance.new("TextLabel")
+    header.Size = UDim2.new(1,0,0,28)
+    header.BackgroundColor3 = Color3.fromRGB(30,30,38)
+    header.Text = "  " .. title
+    header.TextColor3 = Color3.fromRGB(200,200,255)
+    header.Font = Enum.Font.GothamBold
+    header.TextSize = 14
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.Parent = sectionFrame
+    Instance.new("UICorner", header).CornerRadius = UDim.new(0,8)
+
+    local list = Instance.new("Frame")
+    list.Size = UDim2.new(1,0,0,0)
+    list.BackgroundTransparency = 1
+    list.Parent = sectionFrame
+    list.AutomaticSize = Enum.AutomaticSize.Y
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0,6)
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Parent = list
+
+    return list
+end
+
+local movementSection = createSection(scrollNot, "Movement")
+local visualsSection  = createSection(scrollNot, "Visuals")
+local utilitySection  = createSection(scrollNot, "Utility")
+
+-- Movement section with toggles + inputs right below
+local customSpeedToggle, updateSpeedToggle = createToggle(movementSection, "Custom Speed", "customSpeedEnabled", function(enabled)
     if enabled and currentHumanoid then currentHumanoid.WalkSpeed = state.customSpeedValue end
 end)
 
-createToggle(scrollNot, "Custom Jump", "customJumpEnabled", function(enabled)
+local speedInputFrame = Instance.new("Frame")
+speedInputFrame.Size = UDim2.new(1,0,0,56)
+speedInputFrame.BackgroundTransparency = 1
+speedInputFrame.Parent = movementSection
+
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Size = UDim2.new(0.6,0,0,24)
+speedLabel.Position = UDim2.new(0.05,0,0,0)
+speedLabel.BackgroundTransparency = 1
+speedLabel.Text = "Custom Speed: " .. math.floor(state.customSpeedValue)
+speedLabel.TextColor3 = Color3.fromRGB(190,190,200)
+speedLabel.Font = Enum.Font.Gotham
+speedLabel.TextSize = 13
+speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+speedLabel.Parent = speedInputFrame
+
+local speedBox = Instance.new("TextBox")
+speedBox.Size = UDim2.new(0.3,0,0,30)
+speedBox.Position = UDim2.new(0.65,0,0,0)
+speedBox.BackgroundColor3 = Color3.fromRGB(24,24,32)
+speedBox.TextColor3 = Color3.new(1,1,1)
+speedBox.Font = Enum.Font.Gotham
+speedBox.TextSize = 13
+speedBox.Text = tostring(state.customSpeedValue)
+speedBox.ClearTextOnFocus = false
+speedBox.Parent = speedInputFrame
+Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,8)
+
+speedBox.FocusLost:Connect(function()
+    local num = tonumber(speedBox.Text)
+    if num then
+        state.customSpeedValue = math.clamp(num, 1, 100000)
+        speedLabel.Text = "Custom Speed: " .. state.customSpeedValue
+        speedBox.Text = tostring(state.customSpeedValue)
+        if currentHumanoid and state.customSpeedEnabled then
+            currentHumanoid.WalkSpeed = state.customSpeedValue
+        end
+    else
+        speedBox.Text = tostring(state.customSpeedValue)
+    end
+end)
+
+-- Custom Jump with input below toggle
+local customJumpToggle, updateJumpToggle = createToggle(movementSection, "Custom Jump", "customJumpEnabled", function(enabled)
     if enabled and currentHumanoid then currentHumanoid.JumpPower = state.customJumpValue end
 end)
 
-createToggle(scrollNot, "Fly", "flyEnabled", function() end)
+local jumpInputFrame = Instance.new("Frame")
+jumpInputFrame.Size = UDim2.new(1,0,0,56)
+jumpInputFrame.BackgroundTransparency = 1
+jumpInputFrame.Parent = movementSection
 
-createToggle(scrollNot, "Noclip", "noclipEnabled", function(enabled)
+local jumpLabel = Instance.new("TextLabel")
+jumpLabel.Size = UDim2.new(0.6,0,0,24)
+jumpLabel.Position = UDim2.new(0.05,0,0,0)
+jumpLabel.BackgroundTransparency = 1
+jumpLabel.Text = "Jump Power: " .. tostring(state.customJumpValue)
+jumpLabel.TextColor3 = Color3.fromRGB(190,190,200)
+jumpLabel.Font = Enum.Font.Gotham
+jumpLabel.TextSize = 13
+jumpLabel.TextXAlignment = Enum.TextXAlignment.Left
+jumpLabel.Parent = jumpInputFrame
+
+local jumpBox = Instance.new("TextBox")
+jumpBox.Size = UDim2.new(0.3,0,0,30)
+jumpBox.Position = UDim2.new(0.65,0,0,0)
+jumpBox.BackgroundColor3 = Color3.fromRGB(24,24,32)
+jumpBox.TextColor3 = Color3.new(1,1,1)
+jumpBox.Font = Enum.Font.Gotham
+jumpBox.TextSize = 13
+jumpBox.Text = tostring(state.customJumpValue)
+jumpBox.ClearTextOnFocus = false
+jumpBox.Parent = jumpInputFrame
+Instance.new("UICorner", jumpBox).CornerRadius = UDim.new(0,8)
+
+jumpBox.FocusLost:Connect(function()
+    local num = tonumber(jumpBox.Text)
+    if num then
+        state.customJumpValue = math.clamp(num, 1, 1000)
+        jumpLabel.Text = "Jump Power: " .. tostring(state.customJumpValue)
+        jumpBox.Text = tostring(state.customJumpValue)
+        if currentHumanoid and state.customJumpEnabled then
+            currentHumanoid.JumpPower = state.customJumpValue
+        end
+    else
+        jumpBox.Text = tostring(state.customJumpValue)
+    end
+end)
+
+-- Custom Fly Speed with input below toggle
+local flyToggle, updateFlyToggle = createToggle(movementSection, "Fly", "flyEnabled", function() end)
+
+local flyInputFrame = Instance.new("Frame")
+flyInputFrame.Size = UDim2.new(1,0,0,56)
+flyInputFrame.BackgroundTransparency = 1
+flyInputFrame.Parent = movementSection
+
+local flyLabel = Instance.new("TextLabel")
+flyLabel.Size = UDim2.new(0.6,0,0,24)
+flyLabel.Position = UDim2.new(0.05,0,0,0)
+flyLabel.BackgroundTransparency = 1
+flyLabel.Text = "Fly Speed: " .. tostring(state.customFlySpeed)
+flyLabel.TextColor3 = Color3.fromRGB(190,190,200)
+flyLabel.Font = Enum.Font.Gotham
+flyLabel.TextSize = 13
+flyLabel.TextXAlignment = Enum.TextXAlignment.Left
+flyLabel.Parent = flyInputFrame
+
+local flyBox = Instance.new("TextBox")
+flyBox.Size = UDim2.new(0.3,0,0,30)
+flyBox.Position = UDim2.new(0.65,0,0,0)
+flyBox.BackgroundColor3 = Color3.fromRGB(24,24,32)
+flyBox.TextColor3 = Color3.new(1,1,1)
+flyBox.Font = Enum.Font.Gotham
+flyBox.TextSize = 13
+flyBox.Text = tostring(state.customFlySpeed)
+flyBox.ClearTextOnFocus = false
+flyBox.Parent = flyInputFrame
+Instance.new("UICorner", flyBox).CornerRadius = UDim.new(0,8)
+
+flyBox.FocusLost:Connect(function()
+    local num = tonumber(flyBox.Text)
+    if num then
+        state.customFlySpeed = math.clamp(num, 1, 1000000000)
+        flyLabel.Text = "Fly Speed: " .. tostring(state.customFlySpeed)
+        flyBox.Text = tostring(state.customFlySpeed)
+    else
+        flyBox.Text = tostring(state.customFlySpeed)
+    end
+end)
+
+-- Other toggles in Movement
+createToggle(movementSection, "Noclip", "noclipEnabled", function(enabled)
     if character then
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then part.CanCollide = not enabled end
@@ -542,12 +724,70 @@ createToggle(scrollNot, "Noclip", "noclipEnabled", function(enabled)
     end
 end)
 
-createToggle(scrollNot, "Fling (spin + pulse)", "flingEnabled", function(enabled)
+createToggle(movementSection, "Fling", "flingEnabled", function(enabled)
     if enabled then startFling() else stopFling() end
 end)
 
--- Separate draggable TP window
-createAction(scrollNot, "Teleport to Player", function()
+createToggle(movementSection, "Infinite Jump", "infiniteJumpEnabled", function() end)
+
+createToggle(movementSection, "No Fall Damage", "noFallDamage", function() end)
+
+-- Visuals (unchanged)
+createToggle(visualsSection, "Fullbright", "fullbright", function(enabled)
+    if enabled then
+        Lighting.Brightness = 2
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 9999
+        Lighting.Ambient = Color3.new(1,1,1)
+    else
+        Lighting.Brightness = 1
+        Lighting.GlobalShadows = true
+        Lighting.FogEnd = 100000
+        Lighting.Ambient = Color3.new(0.5,0.5,0.5)
+    end
+end)
+
+createToggle(visualsSection, "Player ESP", "playerESP", function(enabled)
+    if not enabled then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Character then
+                local head = p.Character:FindFirstChild("Head")
+                if head and head:FindFirstChild("ESP") then head.ESP:Destroy() end
+            end
+        end
+    end
+end)
+
+-- Utility (unchanged)
+createAction(utilitySection, "Server Hop", function()
+    local success, err = pcall(function()
+        local cursor = ""
+        local servers = {}
+        repeat
+            local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100" .. cursor
+            local req = HttpService:JSONDecode(game:HttpGet(url))
+            for _, v in ipairs(req.data) do
+                if v.playing < v.maxPlayers and v.id ~= game.JobId then
+                    table.insert(servers, v.id)
+                end
+            end
+            cursor = req.nextPageCursor and "&cursor=" .. req.nextPageCursor or ""
+        until not req.nextPageCursor
+        if #servers > 0 then
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1,#servers)])
+        else
+            print("No servers found")
+        end
+    end)
+    if not success then
+        print("Server Hop failed: " .. tostring(err))
+    end
+end)
+
+createToggle(utilitySection, "Auto Rejoin on Kick", "autoRejoin", function() end)
+
+createAction(utilitySection, "Teleport to Player", function()
+    -- your existing separate TP window code (unchanged)
     local tpGui = Instance.new("ScreenGui")
     tpGui.Name = "TPWindow"
     tpGui.ResetOnSpawn = false
@@ -664,132 +904,6 @@ createAction(scrollNot, "Teleport to Player", function()
     task.delay(0.3, fillList)
 end)
 
--- Custom speed (only textbox, no slider)
-local speedFrame = Instance.new("Frame")
-speedFrame.Size = UDim2.new(1,0,0,56)  -- Reduced height since no slider
-speedFrame.BackgroundTransparency = 1
-speedFrame.Parent = scrollNot
-
-local speedLabel = Instance.new("TextLabel")
-speedLabel.Size = UDim2.new(0.6,0,0,24)
-speedLabel.Position = UDim2.new(0.05,0,0,0)
-speedLabel.BackgroundTransparency = 1
-speedLabel.Text = "Custom Speed: " .. math.floor(state.customSpeedValue)
-speedLabel.TextColor3 = Color3.fromRGB(190,190,200)
-speedLabel.Font = Enum.Font.Gotham
-speedLabel.TextSize = 13
-speedLabel.TextXAlignment = Enum.TextXAlignment.Left
-speedLabel.Parent = speedFrame
-
-local speedBox = Instance.new("TextBox")
-speedBox.Size = UDim2.new(0.3,0,0,30)
-speedBox.Position = UDim2.new(0.65,0,0,0)
-speedBox.BackgroundColor3 = Color3.fromRGB(24,24,32)
-speedBox.TextColor3 = Color3.new(1,1,1)
-speedBox.Font = Enum.Font.Gotham
-speedBox.TextSize = 13
-speedBox.Text = tostring(state.customSpeedValue)
-speedBox.ClearTextOnFocus = false
-speedBox.Parent = speedFrame
-Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,8)
-
-speedBox.FocusLost:Connect(function()
-    local num = tonumber(speedBox.Text)
-    if num then
-        state.customSpeedValue = math.clamp(num, 1, 100000)
-        speedLabel.Text = "Custom Speed: " .. state.customSpeedValue
-        speedBox.Text = tostring(state.customSpeedValue)
-        if currentHumanoid and state.customSpeedEnabled then
-            currentHumanoid.WalkSpeed = state.customSpeedValue
-        end
-    else
-        speedBox.Text = tostring(state.customSpeedValue)
-    end
-end)
-
--- Custom jump UI
-local jumpFrame = Instance.new("Frame")
-jumpFrame.Size = UDim2.new(1,0,0,56)
-jumpFrame.BackgroundTransparency = 1
-jumpFrame.Parent = scrollNot
-
-local jumpLabel = Instance.new("TextLabel")
-jumpLabel.Size = UDim2.new(0.6,0,0,24)
-jumpLabel.Position = UDim2.new(0.05,0,0,0)
-jumpLabel.BackgroundTransparency = 1
-jumpLabel.Text = "Jump Power: " .. tostring(state.customJumpValue)
-jumpLabel.TextColor3 = Color3.fromRGB(190,190,200)
-jumpLabel.Font = Enum.Font.Gotham
-jumpLabel.TextSize = 13
-jumpLabel.TextXAlignment = Enum.TextXAlignment.Left
-jumpLabel.Parent = jumpFrame
-
-local jumpBox = Instance.new("TextBox")
-jumpBox.Size = UDim2.new(0.3,0,0,30)
-jumpBox.Position = UDim2.new(0.65,0,0,0)
-jumpBox.BackgroundColor3 = Color3.fromRGB(24,24,32)
-jumpBox.TextColor3 = Color3.new(1,1,1)
-jumpBox.Font = Enum.Font.Gotham
-jumpBox.TextSize = 13
-jumpBox.Text = tostring(state.customJumpValue)
-jumpBox.ClearTextOnFocus = false
-jumpBox.Parent = jumpFrame
-Instance.new("UICorner", jumpBox).CornerRadius = UDim.new(0,8)
-
-jumpBox.FocusLost:Connect(function()
-    local num = tonumber(jumpBox.Text)
-    if num then
-        state.customJumpValue = math.clamp(num, 1, 1000)
-        jumpLabel.Text = "Jump Power: " .. tostring(state.customJumpValue)
-        jumpBox.Text = tostring(state.customJumpValue)
-        if currentHumanoid and state.customJumpEnabled then
-            currentHumanoid.JumpPower = state.customJumpValue
-        end
-    else
-        jumpBox.Text = tostring(state.customJumpValue)
-    end
-end)
-
--- Fly speed UI
-local flyFrame = Instance.new("Frame")
-flyFrame.Size = UDim2.new(1,0,0,56)
-flyFrame.BackgroundTransparency = 1
-flyFrame.Parent = scrollNot
-
-local flyLabel = Instance.new("TextLabel")
-flyLabel.Size = UDim2.new(0.6,0,0,24)
-flyLabel.Position = UDim2.new(0.05,0,0,0)
-flyLabel.BackgroundTransparency = 1
-flyLabel.Text = "Fly Speed: " .. tostring(state.customFlySpeed)
-flyLabel.TextColor3 = Color3.fromRGB(190,190,200)
-flyLabel.Font = Enum.Font.Gotham
-flyLabel.TextSize = 13
-flyLabel.TextXAlignment = Enum.TextXAlignment.Left
-flyLabel.Parent = flyFrame
-
-local flyBox = Instance.new("TextBox")
-flyBox.Size = UDim2.new(0.3,0,0,30)
-flyBox.Position = UDim2.new(0.65,0,0,0)
-flyBox.BackgroundColor3 = Color3.fromRGB(24,24,32)
-flyBox.TextColor3 = Color3.new(1,1,1)
-flyBox.Font = Enum.Font.Gotham
-flyBox.TextSize = 13
-flyBox.Text = tostring(state.customFlySpeed)
-flyBox.ClearTextOnFocus = false
-flyBox.Parent = flyFrame
-Instance.new("UICorner", flyBox).CornerRadius = UDim.new(0,8)
-
-flyBox.FocusLost:Connect(function()
-    local num = tonumber(flyBox.Text)
-    if num then
-        state.customFlySpeed = math.clamp(num, 1, 1000000000)
-        flyLabel.Text = "Fly Speed: " .. tostring(state.customFlySpeed)
-        flyBox.Text = tostring(state.customFlySpeed)
-    else
-        flyBox.Text = tostring(state.customFlySpeed)
-    end
-end)
-
 -- Reset All
 createAction(scrollNot, "Reset All", function()
     state.speedEnabled = false
@@ -798,6 +912,11 @@ createAction(scrollNot, "Reset All", function()
     state.flyEnabled = false
     state.noclipEnabled = false
     state.flingEnabled = false
+    state.infiniteJumpEnabled = false
+    state.noFallDamage = false
+    state.fullbright = false
+    state.playerESP = false
+    state.autoRejoin = false
     stopFling()
     if currentHumanoid then
         currentHumanoid.WalkSpeed = DEFAULT_WALKSPEED
@@ -806,6 +925,16 @@ createAction(scrollNot, "Reset All", function()
     if character then
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then part.CanCollide = true end
+        end
+    end
+    Lighting.Brightness = 1
+    Lighting.GlobalShadows = true
+    Lighting.FogEnd = 100000
+    Lighting.Ambient = Color3.new(0.5,0.5,0.5)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Character then
+            local head = p.Character:FindFirstChild("Head")
+            if head and head:FindFirstChild("ESP") then head.ESP:Destroy() end
         end
     end
     for _, fn in ipairs(toggleUpdateFns) do fn() end
@@ -830,6 +959,19 @@ RunService.Heartbeat:Connect(function()
         currentHumanoid.JumpPower = state.customJumpValue
     end
 
+    -- Infinite Jump (press-based)
+    -- (handled in InputBegan)
+
+    -- No Fall Damage
+    if state.noFallDamage and currentHumanoid:GetState() == Enum.HumanoidStateType.Freefall then
+        currentRootPart.AssemblyLinearVelocity = Vector3.new(
+            currentRootPart.AssemblyLinearVelocity.X,
+            0,
+            currentRootPart.AssemblyLinearVelocity.Z
+        )
+    end
+
+    -- Fly
     if state.flyEnabled and currentRootPart then
         if not bodyVelocity then
             bodyVelocity = Instance.new("BodyVelocity")
@@ -867,6 +1009,66 @@ RunService.Heartbeat:Connect(function()
             if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
         end
     end
+
+    if state.playerESP then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= player and p.Character then
+                local head = p.Character:FindFirstChild("Head")
+                local bb = head and head:FindFirstChild("ESP")
+                if not bb and head then
+                    bb = Instance.new("BillboardGui")
+                    bb.Name = "ESP"
+                    bb.Adornee = head
+                    bb.Size = UDim2.new(0, 200, 0, 50)
+                    bb.StudsOffset = Vector3.new(0, 3, 0)
+                    bb.AlwaysOnTop = true
+                    bb.Parent = head
+
+                    local label = Instance.new("TextLabel")
+                    label.Size = UDim2.new(1,0,1,0)
+                    label.BackgroundTransparency = 1
+                    label.TextColor3 = Color3.new(1,1,1)
+                    label.TextScaled = true
+                    label.Font = Enum.Font.GothamBold
+                    label.Parent = bb
+                end
+                if bb then
+                    local dist = (currentRootPart and (currentRootPart.Position - head.Position).Magnitude) or 0
+                    bb.TextLabel.Text = p.Name .. "\n" .. math.floor(dist) .. " studs"
+                end
+            end
+        end
+    end
 end)
 
-print("LBB Hub loaded | Custom speed now textbox-only | UI resize handle active")
+-- Infinite Jump (press-based)
+local lastJumpTime = 0
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if state.infiniteJumpEnabled and input.KeyCode == Enum.KeyCode.Space then
+        local now = tick()
+        if now - lastJumpTime < 0.12 then return end
+        lastJumpTime = now
+
+        if currentHumanoid and currentRootPart then
+            local stateName = currentHumanoid:GetState().Name
+            if stateName == "Freefall" or stateName == "Landed" or stateName == "Running" then
+                currentRootPart.AssemblyLinearVelocity = Vector3.new(
+                    currentRootPart.AssemblyLinearVelocity.X,
+                    55,
+                    currentRootPart.AssemblyLinearVelocity.Z
+                )
+            end
+        end
+    end
+end)
+
+-- Auto Rejoin
+game:GetService("Players").PlayerRemoving:Connect(function(plr)
+    if plr == player and state.autoRejoin then
+        task.wait(2)
+        TeleportService:Teleport(game.PlaceId)
+    end
+end)
+
+print("LBB Hub loaded - custom inputs now directly under toggles | all features active")
