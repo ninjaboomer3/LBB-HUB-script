@@ -118,17 +118,19 @@ local animateScript=nil; local trueHipHeight=2
 local antiRagdollConns={}
 local healthConn=nil   -- used for AC reset bypass
 
--- Speed: NEVER change WalkSpeed. Use BodyVelocity to add extra horizontal velocity.
-local speedBV=nil
-local function destroySpeedBV() if speedBV then pcall(function() speedBV:Destroy() end); speedBV=nil end end
-local function ensureSpeedBV()
-    if not currentRootPart then return end
-    if speedBV and speedBV.Parent then return end
-    destroySpeedBV()
-    speedBV=Instance.new("BodyVelocity")
-    speedBV.MaxForce=Vector3.new(9e4,0,9e4)
-    speedBV.Velocity=Vector3.zero
-    speedBV.Parent=currentRootPart
+-- Speed: set AssemblyLinearVelocity directly on Heartbeat (same system as Silent's "Speed After Steal")
+local speedConn=nil
+local function stopSpeedConn() if speedConn then speedConn:Disconnect(); speedConn=nil end end
+local function startSpeedConn()
+    stopSpeedConn()
+    speedConn=RunService.Heartbeat:Connect(function()
+        local anySpeed=state.speedEnabled or state.customSpeedEnabled or state.configSpeedEnabled
+        if not anySpeed or not currentHumanoid or not currentRootPart or not currentRootPart.Parent then return end
+        if currentHumanoid.MoveDirection.Magnitude==0 then return end
+        local target=state.speedEnabled and SPEED_277 or (state.customSpeedEnabled and state.customSpeedValue or state.configSpeed)
+        local moveDir=currentHumanoid.MoveDirection.Unit
+        currentRootPart.AssemblyLinearVelocity=Vector3.new(moveDir.X*target, currentRootPart.AssemblyLinearVelocity.Y, moveDir.Z*target)
+    end)
 end
 
 -- ═══════════════════════════════════════════════════
@@ -288,7 +290,7 @@ end
 -- ═══════════════════════════════════════════════════
 local function hookCharacter(char)
     character=char; currentHumanoid=nil; currentRootPart=nil; animateScript=nil
-    state.originalTransparencies={}; destroySpeedBV()
+    state.originalTransparencies={}; stopSpeedConn()
     if not char then return end
     currentHumanoid=char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid",5)
     currentRootPart=char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart",5)
@@ -383,7 +385,7 @@ local function stopFling()
     if flingConn then flingConn:Disconnect(); flingConn=nil end
     if currentRootPart then currentRootPart.AssemblyLinearVelocity=Vector3.zero; currentRootPart.AssemblyAngularVelocity=Vector3.zero end
 end
-player.CharacterRemoving:Connect(function() stopFling(); destroySpeedBV() end)
+player.CharacterRemoving:Connect(function() stopFling(); stopSpeedConn() end)
 
 -- ═══════════════════════════════════════════════════
 --  SEMI TP  (SilentHub logic, restyled to match LBB Hub)
@@ -633,7 +635,7 @@ local function createToggle(parent,label,key,onToggle)
         elseif key=="configSpeedEnabled" and state[key] then state.speedEnabled=false;state.customSpeedEnabled=false end
         local on=state[key]
         if not on then
-            if key=="speedEnabled" or key=="customSpeedEnabled" or key=="configSpeedEnabled" then destroySpeedBV() end
+            if key=="speedEnabled" or key=="customSpeedEnabled" or key=="configSpeedEnabled" then stopSpeedConn() end
             if key=="customJumpEnabled" and currentHumanoid then currentHumanoid.JumpPower=DEFAULT_JUMP end
             if key=="noclipEnabled" and character then for _,p in ipairs(character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide=true end end end
             if key=="flingEnabled" then stopFling() end
@@ -646,7 +648,7 @@ local function createToggle(parent,label,key,onToggle)
                 if character then for _,v in ipairs(character:GetDescendants()) do if v:IsA("BallSocketConstraint") or v:IsA("HingeConstraint") then v.Enabled=true end end end end
             if key=="noAnimEnabled" then if animateScript then animateScript.Disabled=false end end
         else
-            if key=="speedEnabled" or key=="customSpeedEnabled" or key=="configSpeedEnabled" then ensureSpeedBV() end
+            if key=="speedEnabled" or key=="customSpeedEnabled" or key=="configSpeedEnabled" then startSpeedConn() end
             if key=="customJumpEnabled" and currentHumanoid then currentHumanoid.JumpPower=state.customJumpValue end
             if key=="flingEnabled" then startFling() end
             if key=="tallHipsEnabled" and currentHumanoid then currentHumanoid.HipHeight=trueHipHeight+TALL_HIP_OFF end
@@ -745,7 +747,7 @@ cfgT.TextColor3=Color3.fromRGB(180,180,255); cfgT.Font=Enum.Font.GothamBold; cfg
 createValueRow(cfgFrame,"speed",state.configSpeed,1,99999,function(v) state.configSpeed=v end)
 createValueRow(cfgFrame,"steal",state.configSteal,1,99999,function(v) state.configSteal=v end)
 createValueRow(cfgFrame,"jump", state.configJump, 1,99999,function(v) state.configJump=v end)
-createToggle(cfgFrame,"Enable Speed","configSpeedEnabled",function(on) if on then ensureSpeedBV() else destroySpeedBV() end end)
+createToggle(cfgFrame,"Enable Speed","configSpeedEnabled",function(on) if on then startSpeedConn() else stopSpeedConn() end end)
 local saveBtn=Instance.new("TextButton",cfgFrame); saveBtn.Size=UDim2.new(1,0,0,36); saveBtn.BackgroundColor3=Color3.fromRGB(20,55,25)
 saveBtn.Text="💾 Save Config"; saveBtn.TextColor3=Color3.fromRGB(180,255,180); saveBtn.Font=Enum.Font.GothamSemibold; saveBtn.TextSize=13
 Instance.new("UICorner",saveBtn).CornerRadius=UDim.new(0,7)
@@ -758,7 +760,7 @@ createToggle(cfgFrame,"Auto Play","autoPlayEnabled")
 -- ═══════════════════════════════════════════════════
 local movSec=createSection(scrollNot,"Movement"); local visSec=createSection(scrollNot,"Visuals"); local utlSec=createSection(scrollNot,"Utility")
 
-createToggle(movSec,"Custom Speed","customSpeedEnabled",function(on) if on then ensureSpeedBV() else destroySpeedBV() end end)
+createToggle(movSec,"Custom Speed","customSpeedEnabled",function(on) if on then startSpeedConn() else stopSpeedConn() end end)
 createValueRow(movSec,"Speed Value",state.customSpeedValue,1,100000,function(v) state.customSpeedValue=v end)
 createToggle(movSec,"Custom Jump","customJumpEnabled",function(on) if on and currentHumanoid then currentHumanoid.JumpPower=state.customJumpValue end end)
 createValueRow(movSec,"Jump Power",state.customJumpValue,1,1000,function(v) state.customJumpValue=v; if currentHumanoid and state.customJumpEnabled then currentHumanoid.JumpPower=v end end)
@@ -816,7 +818,7 @@ createAction(utlSec,"Reset All",function()
     for _,k in ipairs(ks) do state[k]=false end
     state.checkpointPos=nil; state.checkpointKeybind=nil
     if state.checkpointIndicator then state.checkpointIndicator:Destroy(); state.checkpointIndicator=nil end
-    stopFling(); destroySpeedBV(); clearHitboxes()
+    stopFling(); stopSpeedConn(); clearHitboxes()
     if currentHumanoid then currentHumanoid.JumpPower=DEFAULT_JUMP; currentHumanoid.HipHeight=trueHipHeight end
     if character then
         for _,p in ipairs(character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide=true end end
@@ -843,22 +845,6 @@ RunService.Heartbeat:Connect(function(dt)
 
     if not currentHumanoid or currentHumanoid.Health<=0 then
         if bFlyV then bFlyV:Destroy(); bFlyV=nil end; if bFlyG then bFlyG:Destroy(); bFlyG=nil end; return end
-
-    -- Speed via BodyVelocity (WalkSpeed stays at 16 — server never sees it changed)
-    local anySpeed=state.speedEnabled or state.customSpeedEnabled or state.configSpeedEnabled
-    if anySpeed and currentRootPart then
-        ensureSpeedBV()
-        if speedBV and speedBV.Parent then
-            local target = state.speedEnabled and SPEED_277 or (state.customSpeedEnabled and state.customSpeedValue or state.configSpeed)
-            local extra  = math.max(0, target - DEFAULT_SPEED)
-            local md     = currentHumanoid.MoveDirection
-            if md.Magnitude > 0.1 then
-                -- MoveDirection is already world-space, do NOT apply camera transform
-                local wd=Vector3.new(md.X,0,md.Z)
-                speedBV.Velocity = wd.Magnitude>0.01 and wd.Unit*extra or Vector3.zero
-            else speedBV.Velocity=Vector3.zero end
-        end
-    else destroySpeedBV() end
 
     if state.customJumpEnabled then currentHumanoid.JumpPower=state.customJumpValue end
     if state.tallHipsEnabled then currentHumanoid.HipHeight=trueHipHeight+TALL_HIP_OFF end
@@ -937,7 +923,7 @@ Players.PlayerRemoving:Connect(function(plr) if plr==player and state.autoRejoin
 task.defer(function()
     for _,fn in ipairs(toggleUpdateFns) do fn() end
     keyBtn.Text="Set Keybind (Current: "..state.currentBind.Name..")"
-    if state.speedEnabled or state.customSpeedEnabled or state.configSpeedEnabled then ensureSpeedBV() end
+    if state.speedEnabled or state.customSpeedEnabled or state.configSpeedEnabled then startSpeedConn() end
     if state.customJumpEnabled and currentHumanoid then currentHumanoid.JumpPower=state.customJumpValue end
     if state.tallHipsEnabled and currentHumanoid then currentHumanoid.HipHeight=trueHipHeight+TALL_HIP_OFF end
     if state.fullbright then Lighting.Brightness=2;Lighting.GlobalShadows=false;Lighting.FogEnd=9999;Lighting.Ambient=Color3.new(1,1,1) end
