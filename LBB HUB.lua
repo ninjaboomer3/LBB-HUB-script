@@ -127,9 +127,10 @@ local function startSpeedConn()
         local anySpeed=state.speedEnabled or state.customSpeedEnabled or state.configSpeedEnabled
         if not anySpeed or not currentHumanoid or not currentRootPart or not currentRootPart.Parent then return end
         if currentHumanoid.MoveDirection.Magnitude==0 then return end
-        local target=state.speedEnabled and SPEED_277 or (state.customSpeedEnabled and state.customSpeedValue or state.configSpeed)
+        -- While actively stealing, use configSteal speed; otherwise use normal speed
+        local baseTarget=state.speedEnabled and SPEED_277 or (state.customSpeedEnabled and state.customSpeedValue or state.configSpeed)
         local moveDir=currentHumanoid.MoveDirection.Unit
-        currentRootPart.AssemblyLinearVelocity=Vector3.new(moveDir.X*target, currentRootPart.AssemblyLinearVelocity.Y, moveDir.Z*target)
+        currentRootPart.AssemblyLinearVelocity=Vector3.new(moveDir.X*baseTarget, currentRootPart.AssemblyLinearVelocity.Y, moveDir.Z*baseTarget)
     end)
 end
 
@@ -438,6 +439,18 @@ end
 local function igExecuteSteal(prompt,animalData)
     local d=igStealCache[prompt]; if not d or not d.ready then return end
     d.ready=false; igIsStealing=true; igProgress=0; igCurrentTarget=animalData
+    -- Stop normal speed, apply steal speed exactly like Silent's speedAfterSteal
+    local wasSpeedRunning=speedConn~=nil
+    stopSpeedConn()
+    local stealSpeedConn=nil
+    if state.configSpeedEnabled then
+        stealSpeedConn=RunService.Heartbeat:Connect(function()
+            if not currentHumanoid or not currentRootPart or not currentRootPart.Parent then return end
+            if currentHumanoid.MoveDirection.Magnitude==0 then return end
+            local md=currentHumanoid.MoveDirection.Unit
+            currentRootPart.AssemblyLinearVelocity=Vector3.new(md.X*state.configSteal, currentRootPart.AssemblyLinearVelocity.Y, md.Z*state.configSteal)
+        end)
+    end
     task.spawn(function()
         for _,fn in ipairs(d.holdCallbacks) do task.spawn(fn) end
         local t=tick()
@@ -445,6 +458,9 @@ local function igExecuteSteal(prompt,animalData)
         igProgress=1
         for _,fn in ipairs(d.triggerCallbacks) do task.spawn(fn) end
         task.wait(0.1); d.ready=true; task.wait(0.3); igIsStealing=false; igProgress=0; igCurrentTarget=nil
+        -- Restore normal speed
+        if stealSpeedConn then stealSpeedConn:Disconnect(); stealSpeedConn=nil end
+        if wasSpeedRunning then startSpeedConn() end
     end)
 end
 
@@ -641,6 +657,32 @@ end
 --  GUI  (original v4 style, unchanged)
 -- ═══════════════════════════════════════════════════
 local sg=Instance.new("ScreenGui"); sg.Name="LBBHub"; sg.ResetOnSpawn=false; sg.Parent=PlayerGui
+
+-- Floating grab progress bar (separate from menu, right side of screen, only visible while stealing)
+local igFloatGui=Instance.new("ScreenGui"); igFloatGui.Name="LBBGrabBar"; igFloatGui.ResetOnSpawn=false; igFloatGui.Parent=PlayerGui
+local igFloatFrame=Instance.new("Frame",igFloatGui)
+igFloatFrame.Size=UDim2.new(0,160,0,42); igFloatFrame.Position=UDim2.new(1,-175,0.5,-21)
+igFloatFrame.BackgroundColor3=Color3.fromRGB(14,14,16); igFloatFrame.BorderSizePixel=0; igFloatFrame.Visible=false
+Instance.new("UICorner",igFloatFrame).CornerRadius=UDim.new(0,10)
+local igFloatStroke=Instance.new("UIStroke",igFloatFrame); igFloatStroke.Color=Color3.fromRGB(40,40,48); igFloatStroke.Thickness=1.2
+local igFloatLbl=Instance.new("TextLabel",igFloatFrame); igFloatLbl.Size=UDim2.new(1,0,0,18); igFloatLbl.Position=UDim2.new(0,0,0,4)
+igFloatLbl.BackgroundTransparency=1; igFloatLbl.Text="Auto Grab"; igFloatLbl.TextColor3=Color3.fromRGB(170,170,180)
+igFloatLbl.Font=Enum.Font.GothamSemibold; igFloatLbl.TextSize=11
+local igFloatBg=Instance.new("Frame",igFloatFrame); igFloatBg.Size=UDim2.new(0.85,0,0,10); igFloatBg.Position=UDim2.new(0.075,0,0,24)
+igFloatBg.BackgroundColor3=Color3.fromRGB(30,30,38); Instance.new("UICorner",igFloatBg).CornerRadius=UDim.new(1,0)
+local igFloatFill=Instance.new("Frame",igFloatBg); igFloatFill.Size=UDim2.new(0,0,1,0); igFloatFill.BackgroundColor3=Color3.fromRGB(110,170,255)
+Instance.new("UICorner",igFloatFill).CornerRadius=UDim.new(1,0)
+local igFloatPct=Instance.new("TextLabel",igFloatBg); igFloatPct.Size=UDim2.new(1,-4,1,0); igFloatPct.BackgroundTransparency=1
+igFloatPct.Text="0%"; igFloatPct.TextColor3=Color3.fromRGB(200,200,220); igFloatPct.Font=Enum.Font.GothamBold; igFloatPct.TextSize=9; igFloatPct.TextXAlignment=Enum.TextXAlignment.Right
+task.spawn(function()
+    while true do task.wait(0.05)
+        igFloatFrame.Visible=igIsStealing
+        if igIsStealing then
+            igFloatFill.Size=UDim2.new(math.clamp(igProgress,0,1),0,1,0)
+            igFloatPct.Text=math.floor(igProgress*100+0.5).."%"
+        end
+    end
+end)
 
 local mainFrame=Instance.new("Frame",sg)
 mainFrame.Size=UDim2.new(0,380,0,480); mainFrame.Position=UDim2.new(0.5,-190,0.5,-240)
