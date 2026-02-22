@@ -388,6 +388,94 @@ end
 player.CharacterRemoving:Connect(function() stopFling(); stopSpeedConn() end)
 
 -- ═══════════════════════════════════════════════════
+--  INSTA GRAB SYSTEM  (from SparkHub, replaces old Auto Grab)
+-- ═══════════════════════════════════════════════════
+local igAnimalCache={}; local igPromptCache={}; local igStealCache={}
+local igIsStealing=false; local igProgress=0; local igCurrentTarget=nil
+local igStealConn=nil; local igRadius=20
+
+local function igGetHRP() local c=player.Character; if not c then return nil end; return c:FindFirstChild("HumanoidRootPart") or c:FindFirstChild("UpperTorso") end
+
+local function igIsMyBase(plotName)
+    local plots=workspace:FindFirstChild("Plots"); local plot=plots and plots:FindFirstChild(plotName); if not plot then return false end
+    local sign=plot:FindFirstChild("PlotSign"); if not sign then return false end
+    local yb=sign:FindFirstChild("YourBase"); return yb and yb:IsA("BillboardGui") and yb.Enabled==true
+end
+
+local function igScanPlot(plot)
+    if not plot or not plot:IsA("Model") or igIsMyBase(plot.Name) then return end
+    local pods=plot:FindFirstChild("AnimalPodiums"); if not pods then return end
+    for _,pod in ipairs(pods:GetChildren()) do if pod:IsA("Model") and pod:FindFirstChild("Base") then
+        table.insert(igAnimalCache,{plot=plot.Name,slot=pod.Name,worldPosition=pod:GetPivot().Position,uid=plot.Name.."_"..pod.Name}) end end
+end
+
+task.spawn(function()
+    task.wait(2); local plots=workspace:WaitForChild("Plots",10); if not plots then return end
+    for _,p in ipairs(plots:GetChildren()) do if p:IsA("Model") then igScanPlot(p) end end
+    plots.ChildAdded:Connect(function(p) if p:IsA("Model") then task.wait(0.5); igScanPlot(p) end end)
+    task.spawn(function() while task.wait(5) do table.clear(igAnimalCache)
+        for _,p in ipairs(plots:GetChildren()) do if p:IsA("Model") then igScanPlot(p) end end end end)
+end)
+
+local function igFindPrompt(a)
+    local c=igPromptCache[a.uid]; if c and c.Parent then return c end
+    local plots=workspace:FindFirstChild("Plots"); local plot=plots and plots:FindFirstChild(a.plot); if not plot then return nil end
+    local pods=plot:FindFirstChild("AnimalPodiums"); local pod=pods and pods:FindFirstChild(a.slot); if not pod then return nil end
+    local base=pod:FindFirstChild("Base"); local spawn=base and base:FindFirstChild("Spawn"); if not spawn then return nil end
+    local att=spawn:FindFirstChild("PromptAttachment"); if not att then return nil end
+    for _,p in ipairs(att:GetChildren()) do if p:IsA("ProximityPrompt") then igPromptCache[a.uid]=p; return p end end
+    return nil
+end
+
+local function igBuildCbs(prompt)
+    if igStealCache[prompt] then return end
+    local d={holdCallbacks={},triggerCallbacks={},ready=true}
+    local ok1,c1=pcall(getconnections,prompt.PromptButtonHoldBegan); if ok1 and type(c1)=="table" then for _,c in ipairs(c1) do if type(c.Function)=="function" then table.insert(d.holdCallbacks,c.Function) end end end
+    local ok2,c2=pcall(getconnections,prompt.Triggered); if ok2 and type(c2)=="table" then for _,c in ipairs(c2) do if type(c.Function)=="function" then table.insert(d.triggerCallbacks,c.Function) end end end
+    if #d.holdCallbacks>0 or #d.triggerCallbacks>0 then igStealCache[prompt]=d end
+end
+
+local function igExecuteSteal(prompt,animalData)
+    local d=igStealCache[prompt]; if not d or not d.ready then return end
+    d.ready=false; igIsStealing=true; igProgress=0; igCurrentTarget=animalData
+    task.spawn(function()
+        for _,fn in ipairs(d.holdCallbacks) do task.spawn(fn) end
+        local t=tick()
+        while tick()-t<1.3 do igProgress=(tick()-t)/1.3; task.wait(0.05) end
+        igProgress=1
+        for _,fn in ipairs(d.triggerCallbacks) do task.spawn(fn) end
+        task.wait(0.1); d.ready=true; task.wait(0.3); igIsStealing=false; igProgress=0; igCurrentTarget=nil
+    end)
+end
+
+local function igGetNearest()
+    local hrp=igGetHRP(); if not hrp then return nil end
+    local best,bd=nil,math.huge
+    for _,a in ipairs(igAnimalCache) do
+        if not igIsMyBase(a.plot) and a.worldPosition then
+            local d=(hrp.Position-a.worldPosition).Magnitude; if d<bd then bd=d;best=a end end end
+    return best
+end
+
+local function startInstaGrab()
+    if igStealConn then igStealConn:Disconnect() end
+    igStealConn=RunService.Heartbeat:Connect(function()
+        if not state.autoGrabEnabled or igIsStealing then return end
+        local a=igGetNearest(); if not a then return end
+        local hrp=igGetHRP(); if not hrp then return end
+        if (hrp.Position-a.worldPosition).Magnitude>igRadius then return end
+        local prompt=igPromptCache[a.uid]; if not prompt or not prompt.Parent then prompt=igFindPrompt(a) end
+        if not prompt then return end
+        igBuildCbs(prompt); igExecuteSteal(prompt,a)
+    end)
+end
+
+local function stopInstaGrab()
+    if igStealConn then igStealConn:Disconnect(); igStealConn=nil end
+    igIsStealing=false; igProgress=0; igCurrentTarget=nil
+end
+
+-- ═══════════════════════════════════════════════════
 --  SEMI TP  (SilentHub logic, restyled to match LBB Hub)
 -- ═══════════════════════════════════════════════════
 local ProximityPromptService = game:GetService("ProximityPromptService")
@@ -726,7 +814,7 @@ createToggle(scrollMain,"Spin","spinEnabled")
 createToggle(scrollMain,"Float Up","floatUpEnabled")
 createToggle(scrollMain,"Aimbot (face nearest)","aimbotEnabled")
 createToggle(scrollMain,"Hitbox Visualizer","hitboxEnabled",function(on) if not on then clearHitboxes() end end)
-createToggle(scrollMain,"Auto Grab","autoGrabEnabled")
+createToggle(scrollMain,"Auto Grab","autoGrabEnabled",function(on) if on then startInstaGrab() else stopInstaGrab() end end)
 createAction(scrollMain,"Loser Emote",function() pcall(function() player:Chat("/e loser") end) end)
 createToggle(scrollMain,"Tall Hips","tallHipsEnabled",function(on) if currentHumanoid then currentHumanoid.HipHeight=on and (trueHipHeight+TALL_HIP_OFF) or trueHipHeight end end)
 createToggle(scrollMain,"Medusa Counter","medusaCounterEnabled")
@@ -883,8 +971,6 @@ RunService.Heartbeat:Connect(function(dt)
 
     if state.autoBatEnabled then autoBatT+=dt; if autoBatT>=0.15 then autoBatT=0
         for _,t in ipairs(getAllTools()) do if t.Name:lower():find("bat") then pcall(function() t.Parent=player.Character; if t.Activate then t:Activate() end end) end end end end
-    if state.autoGrabEnabled then for _,t in ipairs(getAllTools()) do if t.Name:lower():find("grab") then pcall(function() t.Parent=player.Character; if t.Activate then t:Activate() end end) end end end
-
     if state.aimbotEnabled and currentRootPart then
         local n=getNearestPlayer(); if n then local my=currentRootPart.Position; local dir=(n.Position-my)*Vector3.new(1,0,1)
             if dir.Magnitude>0.1 then currentRootPart.CFrame=CFrame.new(my,my+dir.Unit) end end end
