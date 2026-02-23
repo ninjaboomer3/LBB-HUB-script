@@ -78,7 +78,7 @@ local state = {
     fullbright = false, playerESP = false, autoRejoin = false,
     checkpointPos = nil, checkpointIndicator = nil, checkpointKeybind = nil,
     floatEnabled = false, antiRagdollEnabled = false, autoBatEnabled = false,
-    noAnimEnabled = false, walkFlingEnabled = false, spinEnabled = false,
+    noAnimEnabled = false, spinEnabled = false,
     floatUpEnabled = false, aimbotEnabled = false, hitboxEnabled = false,
     autoGrabEnabled = false, tallHipsEnabled = false, medusaCounterEnabled = false,
     misplaceEnabled = false, invisEnabled = false, autoPlayEnabled = false,
@@ -90,7 +90,7 @@ local SAVEABLE = {
     "speedEnabled","customSpeedEnabled","customSpeedValue","configSpeedEnabled",
     "customJumpEnabled","customJumpValue","flyEnabled","noclipEnabled","customFlySpeed",
     "flingEnabled","infiniteJumpEnabled","noFallDamage","fullbright","playerESP","autoRejoin",
-    "floatEnabled","antiRagdollEnabled","autoBatEnabled","noAnimEnabled","walkFlingEnabled",
+    "floatEnabled","antiRagdollEnabled","autoBatEnabled","noAnimEnabled",
     "spinEnabled","floatUpEnabled","aimbotEnabled","hitboxEnabled","autoGrabEnabled",
     "tallHipsEnabled","medusaCounterEnabled","misplaceEnabled","invisEnabled","autoPlayEnabled",
     "configSpeed","configSteal","configJump","currentBind",
@@ -124,11 +124,22 @@ local function stopSpeedConn() if speedConn then speedConn:Disconnect(); speedCo
 local function startSpeedConn()
     stopSpeedConn()
     speedConn=RunService.Heartbeat:Connect(function()
-        local anySpeed=state.speedEnabled or state.customSpeedEnabled or state.configSpeedEnabled
+        local anySpeed=state.speedEnabled or state.configSpeedEnabled
         if not anySpeed or not currentHumanoid or not currentRootPart or not currentRootPart.Parent then return end
         if currentHumanoid.MoveDirection.Magnitude==0 then return end
-        -- While actively stealing, use configSteal speed; otherwise use normal speed
-        local baseTarget=state.speedEnabled and SPEED_277 or (state.customSpeedEnabled and state.customSpeedValue or state.configSpeed)
+        -- Carrying a brainrot: game sets WalkSpeed higher than 16 normally; drops it below 25 when carrying.
+        -- Threshold of 25 matches KawatanHub's confirmed working detection for this game.
+        local isCarrying = currentHumanoid.WalkSpeed < 25
+        local baseTarget
+        if isCarrying then
+            baseTarget = state.configSteal
+        elseif state.speedEnabled then
+            baseTarget = SPEED_277
+        elseif state.customSpeedEnabled then
+            baseTarget = state.customSpeedValue
+        else
+            baseTarget = state.configSpeed
+        end
         local moveDir=currentHumanoid.MoveDirection.Unit
         currentRootPart.AssemblyLinearVelocity=Vector3.new(moveDir.X*baseTarget, currentRootPart.AssemblyLinearVelocity.Y, moveDir.Z*baseTarget)
     end)
@@ -223,21 +234,90 @@ end
 -- ═══════════════════════════════════════════════════
 --  ANTI RAGDOLL
 -- ═══════════════════════════════════════════════════
+-- Anti-ragdoll: copied from KawatanHub
+-- Loads PlayerModule controls once so we can re-enable movement after fake ragdoll
+local _arControls
+pcall(function()
+    local pm=require(player:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
+    _arControls=pm:GetControls()
+end)
+
+local _arMoveConn=nil  -- RenderStepped movement loop while faking ragdoll
+local _arAnchor=nil    -- BodyPosition anchor while faking ragdoll
+local _arRemoteConn=nil -- connection to the ragdoll RemoteEvent
+
+local function _arCleanup()
+    if _arAnchor and _arAnchor.Parent then _arAnchor:Destroy() end
+    _arAnchor=nil
+    if _arMoveConn then _arMoveConn:Disconnect(); _arMoveConn=nil end
+end
+
+local function _arDisconnectRemote()
+    if _arRemoteConn then _arRemoteConn:Disconnect(); _arRemoteConn=nil end
+end
+
 local function applyAntiRagdoll(char)
-    for _,c in ipairs(antiRagdollConns) do c:Disconnect() end; antiRagdollConns={}; if not char then return end
-    local function fix() for _,v in ipairs(char:GetDescendants()) do
-        if v:IsA("BallSocketConstraint") or v:IsA("HingeConstraint") then v.Enabled=false end
-        if v:IsA("Motor6D") then v.Enabled=true end end end
-    fix()
-    antiRagdollConns[#antiRagdollConns+1]=char.DescendantAdded:Connect(function(d)
+    for _,c in ipairs(antiRagdollConns) do c:Disconnect() end; antiRagdollConns={}
+    _arCleanup(); _arDisconnectRemote()
+    if not char then return end
+
+    local hum=char:WaitForChild("Humanoid",5)
+    local root=char:WaitForChild("HumanoidRootPart",5)
+    local head=char:WaitForChild("Head",5)
+    if not (hum and root and head) then return end
+
+    -- Find the game's ragdoll RemoteEvent (same path KawatanHub uses)
+    local ragRemote
+    pcall(function()
+        ragRemote=game:GetService("ReplicatedStorage"):WaitForChild("Packages",8)
+            :WaitForChild("Ragdoll",5):WaitForChild("Ragdoll",5)
+    end)
+    if not ragRemote or not ragRemote:IsA("RemoteEvent") then return end
+
+    _arRemoteConn=ragRemote.OnClientEvent:Connect(function(arg1,arg2)
         if not state.antiRagdollEnabled then return end
-        if d:IsA("BallSocketConstraint") or d:IsA("HingeConstraint") then d.Enabled=false end
-        if d:IsA("Motor6D") then d.Enabled=true end end)
-    local hum=char:FindFirstChildOfClass("Humanoid")
-    if hum then antiRagdollConns[#antiRagdollConns+1]=hum.StateChanged:Connect(function(_,new)
-        if not state.antiRagdollEnabled then return end
-        if new==Enum.HumanoidStateType.Ragdoll or new==Enum.HumanoidStateType.FallingDown or new==Enum.HumanoidStateType.Physics then
-            fix(); hum:ChangeState(Enum.HumanoidStateType.GettingUp) end end) end
+
+        if arg1=="Make" or arg2=="manualM" then
+            -- Server wants to ragdoll: fake it, keep player controllable
+            hum:ChangeState(Enum.HumanoidStateType.Freefall)
+            workspace.CurrentCamera.CameraSubject=head
+            root.CanCollide=false
+            if _arControls then pcall(_arControls.Enable,_arControls) end
+            _arCleanup()
+
+            -- Anchor player in place but allow WASD movement (exact KawatanHub logic)
+            local anchor=Instance.new("BodyPosition")
+            anchor.Name="RagdollAnchor"
+            anchor.MaxForce=Vector3.new(1e6,1e6,1e6)
+            anchor.P=5000; anchor.D=1000
+            anchor.Position=root.Position
+            anchor.Parent=root
+            _arAnchor=anchor
+
+            _arMoveConn=RunService.RenderStepped:Connect(function()
+                if not state.antiRagdollEnabled or not anchor or not anchor.Parent then
+                    _arCleanup(); return
+                end
+                -- Use same speed target as speedConn so ragdoll walk feels normal
+                local isCarrying2 = hum.WalkSpeed < 25
+                local arSpeed = isCarrying2 and state.configSteal
+                    or (state.speedEnabled and SPEED_277
+                    or (state.customSpeedEnabled and state.customSpeedValue
+                    or state.configSpeed))
+                local md=hum.MoveDirection
+                anchor.Position=md.Magnitude>0 and root.Position+md.Unit*arSpeed or root.Position
+            end)
+
+        elseif arg1=="Destroy" or arg2=="manualD" then
+            -- Server un-ragdolling: restore everything
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            workspace.CurrentCamera.CameraSubject=hum
+            root.CanCollide=true
+            if _arControls then pcall(_arControls.Enable,_arControls) end
+            _arCleanup()
+        end
+    end)
+    antiRagdollConns[#antiRagdollConns+1]=_arRemoteConn
 end
 
 -- ═══════════════════════════════════════════════════
@@ -344,10 +424,10 @@ local function openCheckpointUI()
     cc.BackgroundColor3=Color3.fromRGB(180,40,40); cc.Text="×"; cc.TextColor3=Color3.new(1,1,1); cc.Font=Enum.Font.GothamBold; cc.TextSize=16
     Instance.new("UICorner",cc).CornerRadius=UDim.new(0,6); cc.MouseButton1Click:Connect(function() cg:Destroy() end)
     local drag,ds,dp; ct.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=true;ds=i.Position;dp=cf.Position
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then drag=true;ds=i.Position;dp=cf.Position
             i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then drag=false end end) end
     end); ct.InputChanged:Connect(function(i)
-        if drag and i.UserInputType==Enum.UserInputType.MouseMovement then local d=i.Position-ds
+        if drag and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then local d=i.Position-ds
             cf.Position=UDim2.new(dp.X.Scale,dp.X.Offset+d.X,dp.Y.Scale,dp.Y.Offset+d.Y) end
     end)
     local function mkb(txt,y,cb)
@@ -374,17 +454,40 @@ function startFling()
     if flingConn then return end
     flingConn=RunService.Heartbeat:Connect(function()
         if not currentRootPart or not currentRootPart.Parent then return end
+        -- Disable own collision so we pass through players instead of standing on their head
+        if character then for _,p in ipairs(character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide=false end end end
+        -- Freefall state prevents humanoid auto step-up onto surfaces/heads
+        if currentHumanoid then currentHumanoid:ChangeState(Enum.HumanoidStateType.Freefall) end
         local sc=currentRootPart.CFrame; local sl=currentRootPart.AssemblyLinearVelocity; local sa=currentRootPart.AssemblyAngularVelocity
+        -- Hover: find nearest player and steer sl towards them so the hover persists after fling restores it
+        local nearest, bestDist = nil, math.huge
+        for _,p in ipairs(Players:GetPlayers()) do
+            if isValidTarget(p) then
+                local r=getRoot(p.Character)
+                if r then local d=(r.Position-currentRootPart.Position).Magnitude; if d<bestDist then bestDist=d; nearest=r end end
+            end
+        end
+        if nearest then
+            local dir=nearest.Position-currentRootPart.Position
+            local flat=Vector3.new(dir.X,0,dir.Z)
+            if flat.Magnitude>1 then
+                local spd=math.max(sl.Magnitude,40)
+                sl=Vector3.new(flat.Unit.X*spd, math.clamp(dir.Y*1.5,-15,15), flat.Unit.Z*spd)
+            end
+        end
+        -- Original fling (unchanged)
         currentRootPart.AssemblyLinearVelocity=Vector3.new((math.random()-.5)*240000,144000+math.random()*72000,(math.random()-.5)*240000)
         currentRootPart.AssemblyAngularVelocity=Vector3.new(math.random(-3000,3000),math.random(-6000,6000),math.random(-3000,3000))
         RunService.RenderStepped:Wait()
         currentRootPart.CFrame=sc*CFrame.Angles(0,math.rad(30000),0)
-        currentRootPart.AssemblyLinearVelocity=sl; currentRootPart.AssemblyAngularVelocity=sa; currentRootPart.AssemblyLinearVelocity+=Vector3.new(0,0.15,0)
+        currentRootPart.AssemblyLinearVelocity=sl; currentRootPart.AssemblyAngularVelocity=sa
     end)
 end
 local function stopFling()
     if flingConn then flingConn:Disconnect(); flingConn=nil end
     if currentRootPart then currentRootPart.AssemblyLinearVelocity=Vector3.zero; currentRootPart.AssemblyAngularVelocity=Vector3.zero end
+    if character then for _,p in ipairs(character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide=true end end end
+    if currentHumanoid then currentHumanoid:ChangeState(Enum.HumanoidStateType.GettingUp) end
 end
 player.CharacterRemoving:Connect(function() stopFling(); stopSpeedConn() end)
 
@@ -439,18 +542,6 @@ end
 local function igExecuteSteal(prompt,animalData)
     local d=igStealCache[prompt]; if not d or not d.ready then return end
     d.ready=false; igIsStealing=true; igProgress=0; igCurrentTarget=animalData
-    -- Stop normal speed, apply steal speed exactly like Silent's speedAfterSteal
-    local wasSpeedRunning=speedConn~=nil
-    stopSpeedConn()
-    local stealSpeedConn=nil
-    if state.configSpeedEnabled then
-        stealSpeedConn=RunService.Heartbeat:Connect(function()
-            if not currentHumanoid or not currentRootPart or not currentRootPart.Parent then return end
-            if currentHumanoid.MoveDirection.Magnitude==0 then return end
-            local md=currentHumanoid.MoveDirection.Unit
-            currentRootPart.AssemblyLinearVelocity=Vector3.new(md.X*state.configSteal, currentRootPart.AssemblyLinearVelocity.Y, md.Z*state.configSteal)
-        end)
-    end
     task.spawn(function()
         for _,fn in ipairs(d.holdCallbacks) do task.spawn(fn) end
         local t=tick()
@@ -458,9 +549,6 @@ local function igExecuteSteal(prompt,animalData)
         igProgress=1
         for _,fn in ipairs(d.triggerCallbacks) do task.spawn(fn) end
         task.wait(0.1); d.ready=true; task.wait(0.3); igIsStealing=false; igProgress=0; igCurrentTarget=nil
-        -- Restore normal speed
-        if stealSpeedConn then stealSpeedConn:Disconnect(); stealSpeedConn=nil end
-        if wasSpeedRunning then startSpeedConn() end
     end)
 end
 
@@ -606,9 +694,9 @@ local function openSemiTPUI()
     cl.BackgroundColor3=Color3.fromRGB(185,45,45); cl.Text="×"; cl.TextColor3=Color3.new(1,1,1); cl.Font=Enum.Font.GothamBold; cl.TextSize=17
     Instance.new("UICorner",cl).CornerRadius=UDim.new(0,7); cl.MouseButton1Click:Connect(function() sg2:Destroy() end)
     local drag2,ds2,dp2=false,nil,nil
-    tb.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then drag2=true;ds2=i.Position;dp2=mf.Position
+    tb.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then drag2=true;ds2=i.Position;dp2=mf.Position
         i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then drag2=false end end) end end)
-    tb.InputChanged:Connect(function(i) if drag2 and i.UserInputType==Enum.UserInputType.MouseMovement then local d=i.Position-ds2
+    tb.InputChanged:Connect(function(i) if drag2 and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then local d=i.Position-ds2
         mf.Position=UDim2.new(dp2.X.Scale,dp2.X.Offset+d.X,dp2.Y.Scale,dp2.Y.Offset+d.Y) end end)
     local function mkToggle(lbl,key,onChange)
         local btn=Instance.new("TextButton",mf); btn.Size=UDim2.new(1,0,0,46); btn.BackgroundColor3=Color3.fromRGB(24,24,32)
@@ -691,12 +779,18 @@ Instance.new("UICorner",mainFrame).CornerRadius=UDim.new(0,12)
 local stroke=Instance.new("UIStroke",mainFrame); stroke.Color=Color3.fromRGB(40,40,48); stroke.Thickness=1.2
 
 local resizing,rsM,rsS=false,nil,nil
+local currentInputPos=Vector2.new(0,0)
+UserInputService.InputChanged:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch then
+        currentInputPos=i.Position
+    end
+end)
 local rH=Instance.new("TextButton",mainFrame); rH.Size=UDim2.new(0,24,0,24); rH.Position=UDim2.new(1,-24,1,-24)
 rH.BackgroundColor3=Color3.fromRGB(50,50,60); rH.Text="↘"; rH.TextColor3=Color3.fromRGB(180,180,200)
 rH.Font=Enum.Font.SourceSansBold; rH.TextSize=16; rH.BorderSizePixel=0; rH.ZIndex=15
 Instance.new("UICorner",rH).CornerRadius=UDim.new(0,6)
-rH.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then resizing=true;rsM=i.Position;rsS=mainFrame.AbsoluteSize;rH.BackgroundColor3=Color3.fromRGB(80,80,100) end end)
-rH.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then resizing=false;rH.BackgroundColor3=Color3.fromRGB(50,50,60) end end)
+rH.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then resizing=true;rsM=i.Position;rsS=mainFrame.AbsoluteSize;rH.BackgroundColor3=Color3.fromRGB(80,80,100) end end)
+rH.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then resizing=false;rH.BackgroundColor3=Color3.fromRGB(50,50,60) end end)
 rH.MouseEnter:Connect(function() if not resizing then rH.BackgroundColor3=Color3.fromRGB(70,70,90) end end)
 rH.MouseLeave:Connect(function() if not resizing then rH.BackgroundColor3=Color3.fromRGB(50,50,60) end end)
 
@@ -719,9 +813,11 @@ bubble.MouseButton1Click:Connect(function() mainFrame.Position=bubble.Position; 
 
 local function makeDraggable(h,t)
     local drag,ds,dp=false,nil,nil
-    h.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=true;ds=i.Position;dp=t.Position
+    local function isPress(i) return i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch end
+    local function isMove(i) return i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch end
+    h.InputBegan:Connect(function(i) if isPress(i) then drag=true;ds=i.Position;dp=t.Position
         i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then drag=false end end) end end)
-    h.InputChanged:Connect(function(i) if drag and i.UserInputType==Enum.UserInputType.MouseMovement then local d=i.Position-ds
+    h.InputChanged:Connect(function(i) if drag and isMove(i) then local d=i.Position-ds
         t.Position=UDim2.new(dp.X.Scale,dp.X.Offset+d.X,dp.Y.Scale,dp.Y.Offset+d.Y) end end)
 end
 makeDraggable(titleBar,mainFrame); makeDraggable(bubble,bubble)
@@ -765,7 +861,8 @@ local function createToggle(parent,label,key,onToggle)
         elseif key=="configSpeedEnabled" and state[key] then state.speedEnabled=false;state.customSpeedEnabled=false end
         local on=state[key]
         if not on then
-            if key=="speedEnabled" or key=="customSpeedEnabled" or key=="configSpeedEnabled" then stopSpeedConn() end
+            if key=="speedEnabled" or key=="configSpeedEnabled" then stopSpeedConn() end
+            if key=="customSpeedEnabled" and currentHumanoid then currentHumanoid.WalkSpeed=16 end
             if key=="customJumpEnabled" and currentHumanoid then currentHumanoid.JumpPower=DEFAULT_JUMP end
             if key=="noclipEnabled" and character then for _,p in ipairs(character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide=true end end end
             if key=="flingEnabled" then stopFling() end
@@ -778,7 +875,7 @@ local function createToggle(parent,label,key,onToggle)
                 if character then for _,v in ipairs(character:GetDescendants()) do if v:IsA("BallSocketConstraint") or v:IsA("HingeConstraint") then v.Enabled=true end end end end
             if key=="noAnimEnabled" then if animateScript then animateScript.Disabled=false end end
         else
-            if key=="speedEnabled" or key=="customSpeedEnabled" or key=="configSpeedEnabled" then startSpeedConn() end
+            if key=="speedEnabled" or key=="configSpeedEnabled" then startSpeedConn() end
             if key=="customJumpEnabled" and currentHumanoid then currentHumanoid.JumpPower=state.customJumpValue end
             if key=="flingEnabled" then startFling() end
             if key=="tallHipsEnabled" and currentHumanoid then currentHumanoid.HipHeight=trueHipHeight+TALL_HIP_OFF end
@@ -851,8 +948,11 @@ createToggle(scrollMain,"Float","floatEnabled")
 createToggle(scrollMain,"Anti Ragdoll","antiRagdollEnabled",function(on) if on and character then applyAntiRagdoll(character) end end)
 createToggle(scrollMain,"Auto Bat","autoBatEnabled")
 createToggle(scrollMain,"No Anim","noAnimEnabled",function(on) if animateScript then animateScript.Disabled=on end; if on then stopAllAnims() end end)
-createToggle(scrollMain,"Walk Fling (others)","walkFlingEnabled")
-createToggle(scrollMain,"Spin","spinEnabled")
+createToggle(scrollMain,"Fling","flingEnabled",function(on) if on then startFling() else stopFling() end end)
+createToggle(scrollMain,"Spin","spinEnabled",function(on)
+    if not on and currentHumanoid then currentHumanoid.AutoRotate=true end
+    if not on and currentRootPart then currentRootPart.AssemblyAngularVelocity=Vector3.zero end
+end)
 createToggle(scrollMain,"Float Up","floatUpEnabled")
 createToggle(scrollMain,"Aimbot (face nearest)","aimbotEnabled")
 createToggle(scrollMain,"Hitbox Visualizer","hitboxEnabled",function(on) if not on then clearHitboxes() end end)
@@ -890,13 +990,15 @@ createToggle(cfgFrame,"Auto Play","autoPlayEnabled")
 -- ═══════════════════════════════════════════════════
 local movSec=createSection(scrollNot,"Movement"); local visSec=createSection(scrollNot,"Visuals"); local utlSec=createSection(scrollNot,"Utility")
 
-createToggle(movSec,"Custom Speed","customSpeedEnabled",function(on) if on then startSpeedConn() else stopSpeedConn() end end)
-createValueRow(movSec,"Speed Value",state.customSpeedValue,1,100000,function(v) state.customSpeedValue=v end)
+createToggle(movSec,"Custom Speed","customSpeedEnabled",function(on)
+    if currentHumanoid then currentHumanoid.WalkSpeed=on and state.customSpeedValue or 16 end
+end)
+createValueRow(movSec,"Speed Value",state.customSpeedValue,1,100000,function(v) state.customSpeedValue=v; if state.customSpeedEnabled and currentHumanoid then currentHumanoid.WalkSpeed=v end end)
 createToggle(movSec,"Custom Jump","customJumpEnabled",function(on) if on and currentHumanoid then currentHumanoid.JumpPower=state.customJumpValue end end)
 createValueRow(movSec,"Jump Power",state.customJumpValue,1,1000,function(v) state.customJumpValue=v; if currentHumanoid and state.customJumpEnabled then currentHumanoid.JumpPower=v end end)
 createToggle(movSec,"Fly","flyEnabled"); createValueRow(movSec,"Fly Speed",state.customFlySpeed,1,1e9,function(v) state.customFlySpeed=v end)
 createToggle(movSec,"Noclip","noclipEnabled",function(on) if character then for _,p in ipairs(character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide=not on end end end end)
-createToggle(movSec,"Fling (self)","flingEnabled",function(on) if on then startFling() else stopFling() end end)
+
 createToggle(movSec,"No Fall Damage","noFallDamage")
 createToggle(visSec,"Fullbright","fullbright",function(on)
     if on then Lighting.Brightness=2;Lighting.GlobalShadows=false;Lighting.FogEnd=9999;Lighting.Ambient=Color3.new(1,1,1)
@@ -943,7 +1045,7 @@ createToggle(utlSec,"Auto Rejoin on Kick","autoRejoin")
 createAction(utlSec,"Reset All",function()
     local ks={"speedEnabled","customSpeedEnabled","configSpeedEnabled","customJumpEnabled","flyEnabled","noclipEnabled","flingEnabled",
         "infiniteJumpEnabled","noFallDamage","fullbright","playerESP","autoRejoin","floatEnabled","antiRagdollEnabled","autoBatEnabled",
-        "noAnimEnabled","walkFlingEnabled","spinEnabled","floatUpEnabled","aimbotEnabled","hitboxEnabled","autoGrabEnabled",
+        "noAnimEnabled","spinEnabled","floatUpEnabled","aimbotEnabled","hitboxEnabled","autoGrabEnabled",
         "tallHipsEnabled","medusaCounterEnabled","misplaceEnabled","invisEnabled","autoPlayEnabled"}
     for _,k in ipairs(ks) do state[k]=false end
     state.checkpointPos=nil; state.checkpointKeybind=nil
@@ -969,7 +1071,7 @@ local bFlyV,bFlyG; local autoBatT=0
 
 RunService.Heartbeat:Connect(function(dt)
     if resizing then
-        local m=UserInputService:GetMouseLocation()
+        local m=currentInputPos
         if m and rsM and rsS then local d=m-rsM; local nw=math.max(320,rsS.X+d.X); local nh=math.max(400,rsS.Y+d.Y)
             mainFrame.Size=UDim2.new(0,nw,0,nh); scrollMain.CanvasSize=UDim2.new(0,0,0,nh*(2100/480)); scrollNot.CanvasSize=UDim2.new(0,0,0,nh*(2100/480)) end end
 
@@ -999,17 +1101,13 @@ RunService.Heartbeat:Connect(function(dt)
     else if bFlyV then bFlyV:Destroy(); bFlyV=nil end; if bFlyG then bFlyG:Destroy(); bFlyG=nil end end
 
     if state.noclipEnabled and character then for _,p in ipairs(character:GetDescendants()) do if p:IsA("BasePart") and p.CanCollide then p.CanCollide=false end end end
+    if state.customSpeedEnabled and currentHumanoid and currentHumanoid.WalkSpeed~=state.customSpeedValue then currentHumanoid.WalkSpeed=state.customSpeedValue end
     if state.floatEnabled and currentRootPart then currentRootPart.AssemblyLinearVelocity=Vector3.new(currentRootPart.AssemblyLinearVelocity.X,0,currentRootPart.AssemblyLinearVelocity.Z) end
     if state.floatUpEnabled and currentRootPart then currentRootPart.AssemblyLinearVelocity=Vector3.new(currentRootPart.AssemblyLinearVelocity.X,20,currentRootPart.AssemblyLinearVelocity.Z) end
-    if state.spinEnabled and currentRootPart then currentRootPart.CFrame=currentRootPart.CFrame*CFrame.Angles(0,math.rad(dt*720),0) end
-
-    if state.walkFlingEnabled and currentRootPart then
-        local myV=currentRootPart.AssemblyLinearVelocity
-        if Vector3.new(myV.X,0,myV.Z).Magnitude>1 then
-            for _,p in ipairs(Players:GetPlayers()) do if isValidTarget(p) then local r=getRoot(p.Character)
-                if r and (r.Position-currentRootPart.Position).Magnitude<8 then
-                    r.AssemblyLinearVelocity=Vector3.new((math.random()-.5)*180000,70000+math.random()*40000,(math.random()-.5)*180000)
-                    r.AssemblyAngularVelocity=Vector3.new(math.random(-2000,2000),math.random(-4000,4000),math.random(-2000,2000)) end end end end end
+    if state.spinEnabled and currentRootPart then
+        if currentHumanoid then currentHumanoid.AutoRotate=false end
+        currentRootPart.AssemblyAngularVelocity=Vector3.new(0,50,0)
+    end
 
     if state.autoBatEnabled then autoBatT+=dt; if autoBatT>=0.15 then autoBatT=0
         for _,t in ipairs(getAllTools()) do if t.Name:lower():find("bat") then pcall(function() t.Parent=player.Character; if t.Activate then t:Activate() end end) end end end end
@@ -1051,7 +1149,8 @@ Players.PlayerRemoving:Connect(function(plr) if plr==player and state.autoRejoin
 task.defer(function()
     for _,fn in ipairs(toggleUpdateFns) do fn() end
     keyBtn.Text="Set Keybind (Current: "..state.currentBind.Name..")"
-    if state.speedEnabled or state.customSpeedEnabled or state.configSpeedEnabled then startSpeedConn() end
+    if state.speedEnabled or state.configSpeedEnabled then startSpeedConn() end
+    if state.customSpeedEnabled and currentHumanoid then currentHumanoid.WalkSpeed=state.customSpeedValue end
     if state.customJumpEnabled and currentHumanoid then currentHumanoid.JumpPower=state.customJumpValue end
     if state.tallHipsEnabled and currentHumanoid then currentHumanoid.HipHeight=trueHipHeight+TALL_HIP_OFF end
     if state.fullbright then Lighting.Brightness=2;Lighting.GlobalShadows=false;Lighting.FogEnd=9999;Lighting.Ambient=Color3.new(1,1,1) end
