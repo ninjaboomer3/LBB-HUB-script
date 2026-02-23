@@ -776,6 +776,9 @@ local mainFrame=Instance.new("Frame",sg)
 local vp=workspace.CurrentCamera.ViewportSize
 local initW=math.min(380,vp.X*0.55)
 local initH=math.min(480,vp.Y*0.5)
+local uiScale=initW/380  -- scale factor for all UI elements
+local function sc(n) return math.floor(n*uiScale) end  -- scale pixels
+local function ts(n) return math.max(8,math.floor(n*uiScale)) end  -- scale text
 mainFrame.Size=UDim2.new(0,initW,0,initH)
 mainFrame.Position=UDim2.new(0.5,-initW/2,0.5,-initH/2)
 mainFrame.BackgroundColor3=Color3.fromRGB(14,14,16); mainFrame.BorderSizePixel=0
@@ -789,29 +792,29 @@ UserInputService.InputChanged:Connect(function(i)
         currentInputPos=i.Position
     end
 end)
-local rH=Instance.new("TextButton",mainFrame); rH.Size=UDim2.new(0,24,0,24); rH.Position=UDim2.new(1,-24,1,-24)
+local rH=Instance.new("TextButton",mainFrame); rH.Size=UDim2.new(0,sc(24),0,sc(24)); rH.Position=UDim2.new(1,-sc(24),1,-sc(24))
 rH.BackgroundColor3=Color3.fromRGB(50,50,60); rH.Text="↘"; rH.TextColor3=Color3.fromRGB(180,180,200)
-rH.Font=Enum.Font.SourceSansBold; rH.TextSize=16; rH.BorderSizePixel=0; rH.ZIndex=15
-Instance.new("UICorner",rH).CornerRadius=UDim.new(0,6)
+rH.Font=Enum.Font.SourceSansBold; rH.TextSize=ts(16); rH.BorderSizePixel=0; rH.ZIndex=15
+Instance.new("UICorner",rH).CornerRadius=UDim.new(0,sc(6))
 rH.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then resizing=true;rsM=i.Position;rsS=mainFrame.AbsoluteSize;rH.BackgroundColor3=Color3.fromRGB(80,80,100) end end)
 rH.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then resizing=false;rH.BackgroundColor3=Color3.fromRGB(50,50,60) end end)
 rH.MouseEnter:Connect(function() if not resizing then rH.BackgroundColor3=Color3.fromRGB(70,70,90) end end)
 rH.MouseLeave:Connect(function() if not resizing then rH.BackgroundColor3=Color3.fromRGB(50,50,60) end end)
 
-local titleBar=Instance.new("Frame",mainFrame); titleBar.Size=UDim2.new(1,0,0,36); titleBar.BackgroundTransparency=1
-local titleLbl=Instance.new("TextLabel",titleBar); titleLbl.Size=UDim2.new(1,-80,1,0); titleLbl.Position=UDim2.fromOffset(12,0)
+local titleBar=Instance.new("Frame",mainFrame); titleBar.Size=UDim2.new(1,0,0,sc(36)); titleBar.BackgroundTransparency=1
+local titleLbl=Instance.new("TextLabel",titleBar); titleLbl.Size=UDim2.new(1,-sc(80),1,0); titleLbl.Position=UDim2.fromOffset(sc(12),0)
 titleLbl.BackgroundTransparency=1; titleLbl.Text="LBB Hub"; titleLbl.TextColor3=Color3.fromRGB(225,225,235)
-titleLbl.Font=Enum.Font.GothamBold; titleLbl.TextSize=15; titleLbl.TextXAlignment=Enum.TextXAlignment.Left
-local closeBtn=Instance.new("TextButton",titleBar); closeBtn.Size=UDim2.new(0,32,0,32); closeBtn.Position=UDim2.new(1,-38,0,2)
+titleLbl.Font=Enum.Font.GothamBold; titleLbl.TextSize=ts(15); titleLbl.TextXAlignment=Enum.TextXAlignment.Left
+local closeBtn=Instance.new("TextButton",titleBar); closeBtn.Size=UDim2.new(0,sc(32),0,sc(32)); closeBtn.Position=UDim2.new(1,-sc(38),0,sc(2))
 closeBtn.BackgroundColor3=Color3.fromRGB(185,45,45); closeBtn.Text="×"; closeBtn.TextColor3=Color3.new(1,1,1)
-closeBtn.Font=Enum.Font.GothamBold; closeBtn.TextSize=18; Instance.new("UICorner",closeBtn).CornerRadius=UDim.new(0,8)
+closeBtn.Font=Enum.Font.GothamBold; closeBtn.TextSize=ts(18); Instance.new("UICorner",closeBtn).CornerRadius=UDim.new(0,sc(8))
 closeBtn.MouseButton1Click:Connect(function() sg:Destroy() end)
-local minBtn=Instance.new("TextButton",titleBar); minBtn.Size=UDim2.fromOffset(30,30); minBtn.Position=UDim2.new(1,-74,0,3)
+local minBtn=Instance.new("TextButton",titleBar); minBtn.Size=UDim2.fromOffset(sc(30),sc(30)); minBtn.Position=UDim2.new(1,-sc(74),0,sc(3))
 minBtn.BackgroundColor3=Color3.fromRGB(40,40,40); minBtn.Text="-"; minBtn.TextColor3=Color3.new(1,1,1)
-minBtn.Font=Enum.Font.SourceSansBold; minBtn.TextSize=20; Instance.new("UICorner",minBtn).CornerRadius=UDim.new(0,6)
-local bubble=Instance.new("TextButton",sg); bubble.Size=UDim2.fromOffset(48,48); bubble.Position=mainFrame.Position
+minBtn.Font=Enum.Font.SourceSansBold; minBtn.TextSize=ts(20); Instance.new("UICorner",minBtn).CornerRadius=UDim.new(0,sc(6))
+local bubble=Instance.new("TextButton",sg); bubble.Size=UDim2.fromOffset(sc(48),sc(48)); bubble.Position=mainFrame.Position
 bubble.BackgroundColor3=Color3.fromRGB(24,24,32); bubble.Text="LBB"; bubble.TextColor3=Color3.fromRGB(225,225,235)
-bubble.Font=Enum.Font.GothamBold; bubble.TextSize=14; bubble.Visible=false; Instance.new("UICorner",bubble).CornerRadius=UDim.new(1,0)
+bubble.Font=Enum.Font.GothamBold; bubble.TextSize=ts(14); bubble.Visible=false; Instance.new("UICorner",bubble).CornerRadius=UDim.new(1,0)
 minBtn.MouseButton1Click:Connect(function() bubble.Position=mainFrame.Position; mainFrame.Visible=false; bubble.Visible=true end)
 bubble.MouseButton1Click:Connect(function() mainFrame.Position=bubble.Position; bubble.Visible=false; mainFrame.Visible=true end)
 
@@ -826,19 +829,20 @@ local function makeDraggable(h,t)
 end
 makeDraggable(titleBar,mainFrame); makeDraggable(bubble,bubble)
 
-local tabBar=Instance.new("Frame",mainFrame); tabBar.Size=UDim2.new(1,0,0,34); tabBar.Position=UDim2.new(0,0,0,36)
+local tabBar=Instance.new("Frame",mainFrame); tabBar.Size=UDim2.new(1,0,0,sc(34)); tabBar.Position=UDim2.new(0,0,0,sc(36))
 tabBar.BackgroundColor3=Color3.fromRGB(18,18,22); tabBar.BorderSizePixel=0
 local tabMain=Instance.new("TextButton",tabBar); tabMain.Size=UDim2.new(0.5,0,1,0); tabMain.BackgroundTransparency=1
-tabMain.Text="Main"; tabMain.Font=Enum.Font.GothamSemibold; tabMain.TextSize=13
+tabMain.Text="Main"; tabMain.Font=Enum.Font.GothamSemibold; tabMain.TextSize=ts(13)
 local tabNot=Instance.new("TextButton",tabBar); tabNot.Size=UDim2.new(0.5,0,1,0); tabNot.Position=UDim2.new(0.5,0,0,0)
-tabNot.BackgroundTransparency=1; tabNot.Text="NOT FOR SAB!"; tabNot.Font=Enum.Font.GothamSemibold; tabNot.TextSize=13
+tabNot.BackgroundTransparency=1; tabNot.Text="NOT FOR SAB!"; tabNot.Font=Enum.Font.GothamSemibold; tabNot.TextSize=ts(13)
 
-local scrollMain=Instance.new("ScrollingFrame",mainFrame); scrollMain.Size=UDim2.new(1,-16,1,-84); scrollMain.Position=UDim2.new(0,8,0,78)
+local scrollTop=sc(36)+sc(34)+sc(8)
+local scrollMain=Instance.new("ScrollingFrame",mainFrame); scrollMain.Size=UDim2.new(1,-sc(16),1,-scrollTop-sc(8)); scrollMain.Position=UDim2.new(0,sc(8),0,scrollTop)
 scrollMain.BackgroundTransparency=1; scrollMain.ScrollBarThickness=4; scrollMain.CanvasSize=UDim2.new(0,0,0,2100)
-Instance.new("UIListLayout",scrollMain).Padding=UDim.new(0,8)
-local scrollNot=Instance.new("ScrollingFrame",mainFrame); scrollNot.Size=UDim2.new(1,-16,1,-84); scrollNot.Position=UDim2.new(0,8,0,78)
+Instance.new("UIListLayout",scrollMain).Padding=UDim.new(0,sc(8))
+local scrollNot=Instance.new("ScrollingFrame",mainFrame); scrollNot.Size=UDim2.new(1,-sc(16),1,-scrollTop-sc(8)); scrollNot.Position=UDim2.new(0,sc(8),0,scrollTop)
 scrollNot.BackgroundTransparency=1; scrollNot.ScrollBarThickness=4; scrollNot.CanvasSize=UDim2.new(0,0,0,2100); scrollNot.Visible=false
-Instance.new("UIListLayout",scrollNot).Padding=UDim.new(0,8)
+Instance.new("UIListLayout",scrollNot).Padding=UDim.new(0,sc(8))
 
 local function switchTab(toMain)
     scrollMain.Visible=toMain; scrollNot.Visible=not toMain
@@ -852,10 +856,10 @@ switchTab(true); tabMain.MouseButton1Click:Connect(function() switchTab(true) en
 -- ═══════════════════════════════════════════════════
 local toggleUpdateFns={}
 local function createToggle(parent,label,key,onToggle)
-    local btn=Instance.new("TextButton",parent); btn.Size=UDim2.new(1,0,0,46); btn.BackgroundColor3=Color3.fromRGB(24,24,32)
-    btn.TextColor3=Color3.fromRGB(215,215,225); btn.Font=Enum.Font.GothamSemibold; btn.TextSize=14
+    local btn=Instance.new("TextButton",parent); btn.Size=UDim2.new(1,0,0,sc(46)); btn.BackgroundColor3=Color3.fromRGB(24,24,32)
+    btn.TextColor3=Color3.fromRGB(215,215,225); btn.Font=Enum.Font.GothamSemibold; btn.TextSize=ts(14)
     btn.TextXAlignment=Enum.TextXAlignment.Left
-    Instance.new("UIPadding",btn).PaddingLeft=UDim.new(0,16); Instance.new("UICorner",btn).CornerRadius=UDim.new(0,9)
+    Instance.new("UIPadding",btn).PaddingLeft=UDim.new(0,sc(16)); Instance.new("UICorner",btn).CornerRadius=UDim.new(0,sc(9))
     local function upd() btn.Text=label.." "..(state[key] and "[ON]" or "[OFF]"); btn.BackgroundColor3=state[key] and Color3.fromRGB(28,44,70) or Color3.fromRGB(24,24,32) end
     upd()
     btn.MouseButton1Click:Connect(function()
@@ -897,28 +901,28 @@ local function createToggle(parent,label,key,onToggle)
 end
 
 local function createAction(parent,txt,cb,clr)
-    local btn=Instance.new("TextButton",parent); btn.Size=UDim2.new(1,0,0,46); btn.BackgroundColor3=clr or Color3.fromRGB(24,24,32)
-    btn.Text=txt; btn.TextColor3=Color3.fromRGB(215,215,225); btn.Font=Enum.Font.GothamSemibold; btn.TextSize=14
-    btn.TextXAlignment=Enum.TextXAlignment.Left; Instance.new("UIPadding",btn).PaddingLeft=UDim.new(0,16)
-    Instance.new("UICorner",btn).CornerRadius=UDim.new(0,9); btn.MouseButton1Click:Connect(cb); return btn
+    local btn=Instance.new("TextButton",parent); btn.Size=UDim2.new(1,0,0,sc(46)); btn.BackgroundColor3=clr or Color3.fromRGB(24,24,32)
+    btn.Text=txt; btn.TextColor3=Color3.fromRGB(215,215,225); btn.Font=Enum.Font.GothamSemibold; btn.TextSize=ts(14)
+    btn.TextXAlignment=Enum.TextXAlignment.Left; Instance.new("UIPadding",btn).PaddingLeft=UDim.new(0,sc(16))
+    Instance.new("UICorner",btn).CornerRadius=UDim.new(0,sc(9)); btn.MouseButton1Click:Connect(cb); return btn
 end
 
 local function createSection(parent,title)
     local f=Instance.new("Frame",parent); f.Size=UDim2.new(1,0,0,0); f.BackgroundTransparency=1; f.AutomaticSize=Enum.AutomaticSize.Y
-    local hdr=Instance.new("TextLabel",f); hdr.Size=UDim2.new(1,0,0,28); hdr.BackgroundColor3=Color3.fromRGB(30,30,38)
-    hdr.Text="  "..title; hdr.TextColor3=Color3.fromRGB(200,200,255); hdr.Font=Enum.Font.GothamBold; hdr.TextSize=14
-    hdr.TextXAlignment=Enum.TextXAlignment.Left; hdr.BorderSizePixel=0; Instance.new("UICorner",hdr).CornerRadius=UDim.new(0,8)
+    local hdr=Instance.new("TextLabel",f); hdr.Size=UDim2.new(1,0,0,sc(28)); hdr.BackgroundColor3=Color3.fromRGB(30,30,38)
+    hdr.Text="  "..title; hdr.TextColor3=Color3.fromRGB(200,200,255); hdr.Font=Enum.Font.GothamBold; hdr.TextSize=ts(14)
+    hdr.TextXAlignment=Enum.TextXAlignment.Left; hdr.BorderSizePixel=0; Instance.new("UICorner",hdr).CornerRadius=UDim.new(0,sc(8))
     local list=Instance.new("Frame",f); list.Size=UDim2.new(1,0,0,0); list.BackgroundTransparency=1; list.AutomaticSize=Enum.AutomaticSize.Y
-    Instance.new("UIListLayout",list).Padding=UDim.new(0,6); return list
+    Instance.new("UIListLayout",list).Padding=UDim.new(0,sc(6)); return list
 end
 
 local function createValueRow(parent,lbl,init,minV,maxV,onChange)
-    local row=Instance.new("Frame",parent); row.Size=UDim2.new(1,0,0,56); row.BackgroundTransparency=1
-    local l=Instance.new("TextLabel",row); l.Size=UDim2.new(0.6,0,0,24); l.Position=UDim2.new(0.05,0,0,0)
-    l.BackgroundTransparency=1; l.Text=lbl; l.TextColor3=Color3.fromRGB(190,190,200); l.Font=Enum.Font.Gotham; l.TextSize=13; l.TextXAlignment=Enum.TextXAlignment.Left
-    local box=Instance.new("TextBox",row); box.Size=UDim2.new(0.3,0,0,30); box.Position=UDim2.new(0.65,0,0,0)
-    box.BackgroundColor3=Color3.fromRGB(24,24,32); box.TextColor3=Color3.new(1,1,1); box.Font=Enum.Font.Gotham; box.TextSize=13; box.Text=tostring(init); box.ClearTextOnFocus=false
-    Instance.new("UICorner",box).CornerRadius=UDim.new(0,8)
+    local row=Instance.new("Frame",parent); row.Size=UDim2.new(1,0,0,sc(56)); row.BackgroundTransparency=1
+    local l=Instance.new("TextLabel",row); l.Size=UDim2.new(0.6,0,0,sc(24)); l.Position=UDim2.new(0.05,0,0,0)
+    l.BackgroundTransparency=1; l.Text=lbl; l.TextColor3=Color3.fromRGB(190,190,200); l.Font=Enum.Font.Gotham; l.TextSize=ts(13); l.TextXAlignment=Enum.TextXAlignment.Left
+    local box=Instance.new("TextBox",row); box.Size=UDim2.new(0.3,0,0,sc(30)); box.Position=UDim2.new(0.65,0,0,0)
+    box.BackgroundColor3=Color3.fromRGB(24,24,32); box.TextColor3=Color3.new(1,1,1); box.Font=Enum.Font.Gotham; box.TextSize=ts(13); box.Text=tostring(init); box.ClearTextOnFocus=false
+    Instance.new("UICorner",box).CornerRadius=UDim.new(0,sc(8))
     box.FocusLost:Connect(function() local n=tonumber(box.Text); if n then n=math.clamp(n,minV,maxV);box.Text=tostring(n);onChange(n) else box.Text=tostring(init) end end)
     return row
 end
@@ -928,10 +932,10 @@ end
 -- ═══════════════════════════════════════════════════
 createAction(scrollMain,"Use Everything",useEverything)
 
-local keyBtn=Instance.new("TextButton",scrollMain); keyBtn.Size=UDim2.new(1,0,0,46); keyBtn.BackgroundColor3=Color3.fromRGB(24,24,32)
+local keyBtn=Instance.new("TextButton",scrollMain); keyBtn.Size=UDim2.new(1,0,0,sc(46)); keyBtn.BackgroundColor3=Color3.fromRGB(24,24,32)
 keyBtn.Text="Set Keybind (Current: "..state.currentBind.Name..")"; keyBtn.TextColor3=Color3.fromRGB(215,215,225)
-keyBtn.Font=Enum.Font.GothamSemibold; keyBtn.TextSize=14; keyBtn.TextXAlignment=Enum.TextXAlignment.Left
-Instance.new("UICorner",keyBtn).CornerRadius=UDim.new(0,9); Instance.new("UIPadding",keyBtn).PaddingLeft=UDim.new(0,16)
+keyBtn.Font=Enum.Font.GothamSemibold; keyBtn.TextSize=ts(14); keyBtn.TextXAlignment=Enum.TextXAlignment.Left
+Instance.new("UICorner",keyBtn).CornerRadius=UDim.new(0,sc(9)); Instance.new("UIPadding",keyBtn).PaddingLeft=UDim.new(0,sc(16))
 keyBtn.MouseButton1Click:Connect(function() state.waitingForKey=true; keyBtn.Text="Press key..." end)
 UserInputService.InputBegan:Connect(function(input,gp)
     if gp then return end
