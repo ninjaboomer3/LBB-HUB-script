@@ -775,8 +775,8 @@ end)
 local mainFrame=Instance.new("Frame",sg)
 local vp=workspace.CurrentCamera.ViewportSize
 local isMobile=UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-local initW=isMobile and math.min(300,vp.X*0.85) or 380
-local initH=isMobile and math.min(380,vp.Y*0.75) or 480
+local initW=isMobile and math.min(220,vp.X*0.55) or 380
+local initH=isMobile and math.min(280,vp.Y*0.5) or 480
 mainFrame.Size=UDim2.new(0,initW,0,initH)
 mainFrame.Position=isMobile and UDim2.new(0.5,-initW/2,0.5,-initH/2) or UDim2.new(0.5,-190,0.5,-240)
 mainFrame.BackgroundColor3=Color3.fromRGB(14,14,16); mainFrame.BorderSizePixel=0
