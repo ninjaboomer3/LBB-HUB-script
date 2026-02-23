@@ -774,11 +774,10 @@ end)
 
 local mainFrame=Instance.new("Frame",sg)
 local vp=workspace.CurrentCamera.ViewportSize
-local isMobile=UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-local initW=isMobile and math.min(220,vp.X*0.55) or 380
-local initH=isMobile and math.min(280,vp.Y*0.5) or 480
+local initW=math.min(380,vp.X*0.55)
+local initH=math.min(480,vp.Y*0.5)
 mainFrame.Size=UDim2.new(0,initW,0,initH)
-mainFrame.Position=isMobile and UDim2.new(0.5,-initW/2,0.5,-initH/2) or UDim2.new(0.5,-190,0.5,-240)
+mainFrame.Position=UDim2.new(0.5,-initW/2,0.5,-initH/2)
 mainFrame.BackgroundColor3=Color3.fromRGB(14,14,16); mainFrame.BorderSizePixel=0
 Instance.new("UICorner",mainFrame).CornerRadius=UDim.new(0,12)
 local stroke=Instance.new("UIStroke",mainFrame); stroke.Color=Color3.fromRGB(40,40,48); stroke.Thickness=1.2
