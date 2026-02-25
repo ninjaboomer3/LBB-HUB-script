@@ -773,12 +773,8 @@ task.spawn(function()
 end)
 
 local mainFrame=Instance.new("Frame",sg)
-local vp=workspace.CurrentCamera.ViewportSize
-local uiS=vp.X<600 and 1/3 or 1
-local fW=math.floor(380*uiS); local fH=math.floor(480*uiS)
-mainFrame.Size=UDim2.new(0,fW,0,fH)
-mainFrame.Position=UDim2.new(0.5,-fW/2,0.5,-fH/2)
-local _uiScale=Instance.new("UIScale",mainFrame); _uiScale.Scale=uiS
+mainFrame.Size=UDim2.new(0,240,0,320)
+mainFrame.Position=UDim2.new(0.5,-120,0.5,-160)
 mainFrame.BackgroundColor3=Color3.fromRGB(14,14,16); mainFrame.BorderSizePixel=0
 Instance.new("UICorner",mainFrame).CornerRadius=UDim.new(0,12)
 local stroke=Instance.new("UIStroke",mainFrame); stroke.Color=Color3.fromRGB(40,40,48); stroke.Thickness=1.2
@@ -1088,7 +1084,7 @@ local bFlyV,bFlyG; local autoBatT=0
 RunService.Heartbeat:Connect(function(dt)
     if resizing then
         local m=currentInputPos
-        if m and rsM and rsS then local d=m-rsM; local nw=math.max(320,rsS.X+d.X); local nh=math.max(400,rsS.Y+d.Y)
+        if m and rsM and rsS then local d=m-rsM; local nw=math.max(200,rsS.X+d.X); local nh=math.max(280,rsS.Y+d.Y)
             mainFrame.Size=UDim2.new(0,nw,0,nh); scrollMain.CanvasSize=UDim2.new(0,0,0,nh*(2100/480)); scrollNot.CanvasSize=UDim2.new(0,0,0,nh*(2100/480)) end end
 
     if not currentHumanoid or currentHumanoid.Health<=0 then
