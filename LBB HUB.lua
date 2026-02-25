@@ -413,15 +413,15 @@ local function tpCP() if state.checkpointPos and currentRootPart then currentRoo
 local function openCheckpointUI()
     if PlayerGui:FindFirstChild("CPWin") then PlayerGui.CPWin:Destroy() end
     local cg=Instance.new("ScreenGui"); cg.Name="CPWin"; cg.ResetOnSpawn=false; cg.Parent=PlayerGui
-    local cf=Instance.new("Frame",cg); cf.Size=UDim2.new(0,220,0,145); cf.Position=UDim2.new(0.5,-110,0.5,-72)
+    local cf=Instance.new("Frame",cg); cf.Size=UDim2.new(0,139,0,91); cf.Position=UDim2.new(0.5,-70,0.5,-46)
     cf.BackgroundColor3=Color3.fromRGB(20,20,25); cf.BorderSizePixel=0; Instance.new("UICorner",cf).CornerRadius=UDim.new(0,10)
     local ct=Instance.new("Frame",cf); ct.Size=UDim2.new(1,0,0,32); ct.BackgroundColor3=Color3.fromRGB(30,30,38)
     Instance.new("UICorner",ct).CornerRadius=UDim.new(0,10)
     local cl=Instance.new("TextLabel",ct); cl.Size=UDim2.new(1,-38,1,0); cl.BackgroundTransparency=1; cl.Text="Checkpoint"
-    cl.TextColor3=Color3.fromRGB(200,255,220); cl.Font=Enum.Font.GothamBold; cl.TextSize=14
-    cl.TextXAlignment=Enum.TextXAlignment.Left; Instance.new("UIPadding",cl).PaddingLeft=UDim.new(0,12)
-    local cc=Instance.new("TextButton",ct); cc.Size=UDim2.new(0,26,0,26); cc.Position=UDim2.new(1,-30,0,3)
-    cc.BackgroundColor3=Color3.fromRGB(180,40,40); cc.Text="×"; cc.TextColor3=Color3.new(1,1,1); cc.Font=Enum.Font.GothamBold; cc.TextSize=16
+    cl.TextColor3=Color3.fromRGB(200,255,220); cl.Font=Enum.Font.GothamBold; cl.TextSize=9
+    cl.TextXAlignment=Enum.TextXAlignment.Left; Instance.new("UIPadding",cl).PaddingLeft=UDim.new(0,8)
+    local cc=Instance.new("TextButton",ct); cc.Size=UDim2.new(0,16,0,16); cc.Position=UDim2.new(1,-19,0,2)
+    cc.BackgroundColor3=Color3.fromRGB(180,40,40); cc.Text="×"; cc.TextColor3=Color3.new(1,1,1); cc.Font=Enum.Font.GothamBold; cc.TextSize=10
     Instance.new("UICorner",cc).CornerRadius=UDim.new(0,6); cc.MouseButton1Click:Connect(function() cg:Destroy() end)
     local drag,ds,dp; ct.InputBegan:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then drag=true;ds=i.Position;dp=cf.Position
@@ -431,9 +431,9 @@ local function openCheckpointUI()
             cf.Position=UDim2.new(dp.X.Scale,dp.X.Offset+d.X,dp.Y.Scale,dp.Y.Offset+d.Y) end
     end)
     local function mkb(txt,y,cb)
-        local b=Instance.new("TextButton",cf); b.Size=UDim2.new(0.9,0,0,30); b.Position=UDim2.new(0.05,0,y,0)
+        local b=Instance.new("TextButton",cf); b.Size=UDim2.new(0.9,0,0,19); b.Position=UDim2.new(0.05,0,y,0)
         b.BackgroundColor3=Color3.fromRGB(24,24,32); b.Text=txt; b.TextColor3=Color3.new(1,1,1)
-        b.Font=Enum.Font.GothamSemibold; b.TextSize=13; Instance.new("UICorner",b).CornerRadius=UDim.new(0,8)
+        b.Font=Enum.Font.GothamSemibold; b.TextSize=8; Instance.new("UICorner",b).CornerRadius=UDim.new(0,5)
         b.MouseButton1Click:Connect(cb); return b end
     mkb("Teleport",0.27,tpCP); mkb("Set Checkpoint",0.53,setCheckpoint)
     local kb=mkb("Set Keybind",0.79,function() cpWaitKey=true end)
@@ -681,7 +681,7 @@ local function openSemiTPUI()
     if PlayerGui:FindFirstChild("LBBSemiTP") then PlayerGui.LBBSemiTP:Destroy() end
     local sg2=Instance.new("ScreenGui"); sg2.Name="LBBSemiTP"; sg2.ResetOnSpawn=false; sg2.Parent=PlayerGui
     local mf=Instance.new("Frame",sg2)
-    mf.Size=UDim2.new(0,280,0,0); mf.AutomaticSize=Enum.AutomaticSize.Y; mf.Position=UDim2.new(0.5,-140,0.5,-180)
+    mf.Size=UDim2.new(0,177,0,0); mf.AutomaticSize=Enum.AutomaticSize.Y; mf.Position=UDim2.new(0.5,-89,0.5,-180)
     mf.BackgroundColor3=Color3.fromRGB(14,14,16); mf.BorderSizePixel=0
     Instance.new("UICorner",mf).CornerRadius=UDim.new(0,12)
     local mfS=Instance.new("UIStroke",mf); mfS.Color=Color3.fromRGB(40,40,48); mfS.Thickness=1.2
@@ -689,9 +689,9 @@ local function openSemiTPUI()
     local mfP=Instance.new("UIPadding",mf); mfP.PaddingLeft=UDim.new(0,10); mfP.PaddingRight=UDim.new(0,10); mfP.PaddingTop=UDim.new(0,10); mfP.PaddingBottom=UDim.new(0,12)
     local tb=Instance.new("Frame",mf); tb.Size=UDim2.new(1,0,0,30); tb.BackgroundTransparency=1
     local tl=Instance.new("TextLabel",tb); tl.Size=UDim2.new(1,-36,1,0); tl.BackgroundTransparency=1
-    tl.Text="LBB Semi TP"; tl.TextColor3=Color3.fromRGB(225,225,235); tl.Font=Enum.Font.GothamBold; tl.TextSize=15; tl.TextXAlignment=Enum.TextXAlignment.Left
-    local cl=Instance.new("TextButton",tb); cl.Size=UDim2.new(0,30,0,30); cl.Position=UDim2.new(1,-30,0,0)
-    cl.BackgroundColor3=Color3.fromRGB(185,45,45); cl.Text="×"; cl.TextColor3=Color3.new(1,1,1); cl.Font=Enum.Font.GothamBold; cl.TextSize=17
+    tl.Text="LBB Semi TP"; tl.TextColor3=Color3.fromRGB(225,225,235); tl.Font=Enum.Font.GothamBold; tl.TextSize=9; tl.TextXAlignment=Enum.TextXAlignment.Left
+    local cl=Instance.new("TextButton",tb); cl.Size=UDim2.new(0,19,0,19); cl.Position=UDim2.new(1,-19,0,0)
+    cl.BackgroundColor3=Color3.fromRGB(185,45,45); cl.Text="×"; cl.TextColor3=Color3.new(1,1,1); cl.Font=Enum.Font.GothamBold; cl.TextSize=11
     Instance.new("UICorner",cl).CornerRadius=UDim.new(0,7); cl.MouseButton1Click:Connect(function() sg2:Destroy() end)
     local drag2,ds2,dp2=false,nil,nil
     tb.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then drag2=true;ds2=i.Position;dp2=mf.Position
@@ -699,16 +699,16 @@ local function openSemiTPUI()
     tb.InputChanged:Connect(function(i) if drag2 and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then local d=i.Position-ds2
         mf.Position=UDim2.new(dp2.X.Scale,dp2.X.Offset+d.X,dp2.Y.Scale,dp2.Y.Offset+d.Y) end end)
     local function mkToggle(lbl,key,onChange)
-        local btn=Instance.new("TextButton",mf); btn.Size=UDim2.new(1,0,0,46); btn.BackgroundColor3=Color3.fromRGB(24,24,32)
-        btn.TextColor3=Color3.fromRGB(215,215,225); btn.Font=Enum.Font.GothamSemibold; btn.TextSize=14; btn.TextXAlignment=Enum.TextXAlignment.Left
-        Instance.new("UIPadding",btn).PaddingLeft=UDim.new(0,16); Instance.new("UICorner",btn).CornerRadius=UDim.new(0,9)
+        local btn=Instance.new("TextButton",mf); btn.Size=UDim2.new(1,0,0,29); btn.BackgroundColor3=Color3.fromRGB(24,24,32)
+        btn.TextColor3=Color3.fromRGB(215,215,225); btn.Font=Enum.Font.GothamSemibold; btn.TextSize=9; btn.TextXAlignment=Enum.TextXAlignment.Left
+        Instance.new("UIPadding",btn).PaddingLeft=UDim.new(0,10); Instance.new("UICorner",btn).CornerRadius=UDim.new(0,6)
         local function upd() btn.Text=lbl.." "..(semiState[key] and "[ON]" or "[OFF]"); btn.BackgroundColor3=semiState[key] and Color3.fromRGB(28,44,70) or Color3.fromRGB(24,24,32) end; upd()
         btn.MouseButton1Click:Connect(function() semiState[key]=not semiState[key]; if onChange then onChange(semiState[key]) end; upd() end)
     end
     local function mkAction(lbl,cb)
-        local btn=Instance.new("TextButton",mf); btn.Size=UDim2.new(1,0,0,46); btn.BackgroundColor3=Color3.fromRGB(24,24,32)
-        btn.Text=lbl; btn.TextColor3=Color3.fromRGB(215,215,225); btn.Font=Enum.Font.GothamSemibold; btn.TextSize=14; btn.TextXAlignment=Enum.TextXAlignment.Left
-        Instance.new("UIPadding",btn).PaddingLeft=UDim.new(0,16); Instance.new("UICorner",btn).CornerRadius=UDim.new(0,9)
+        local btn=Instance.new("TextButton",mf); btn.Size=UDim2.new(1,0,0,29); btn.BackgroundColor3=Color3.fromRGB(24,24,32)
+        btn.Text=lbl; btn.TextColor3=Color3.fromRGB(215,215,225); btn.Font=Enum.Font.GothamSemibold; btn.TextSize=9; btn.TextXAlignment=Enum.TextXAlignment.Left
+        Instance.new("UIPadding",btn).PaddingLeft=UDim.new(0,10); Instance.new("UICorner",btn).CornerRadius=UDim.new(0,6)
         btn.MouseButton1Click:Connect(cb); return btn
     end
     mkToggle("Half TP","halfTp")
@@ -1019,29 +1019,29 @@ createToggle(visSec,"Player ESP","playerESP",function(on)
     if not on then for _,p in ipairs(Players:GetPlayers()) do if p.Character then local h=p.Character:FindFirstChild("Head"); if h and h:FindFirstChild("ESP") then h.ESP:Destroy() end end end end end)
 createAction(utlSec,"Teleport to Player",function()
     local tg=Instance.new("ScreenGui"); tg.ResetOnSpawn=false; tg.Parent=PlayerGui
-    local tf=Instance.new("Frame",tg); tf.Size=UDim2.new(0,340,0,420); tf.Position=UDim2.new(0.5,-170,0.5,-210)
+    local tf=Instance.new("Frame",tg); tf.Size=UDim2.new(0,214,0,265); tf.Position=UDim2.new(0.5,-107,0.5,-133)
     tf.BackgroundColor3=Color3.fromRGB(18,18,24); tf.BorderSizePixel=0; Instance.new("UICorner",tf).CornerRadius=UDim.new(0,14)
-    local ttb=Instance.new("Frame",tf); ttb.Size=UDim2.new(1,0,0,40); ttb.BackgroundColor3=Color3.fromRGB(14,14,20)
+    local ttb=Instance.new("Frame",tf); ttb.Size=UDim2.new(1,0,0,25); ttb.BackgroundColor3=Color3.fromRGB(14,14,20)
     local ttl=Instance.new("TextLabel",ttb); ttl.Size=UDim2.new(1,-50,1,0); ttl.BackgroundTransparency=1
-    ttl.Text="Teleport to Player"; ttl.TextColor3=Color3.fromRGB(200,200,255); ttl.Font=Enum.Font.GothamBold; ttl.TextSize=18
-    local tc=Instance.new("TextButton",ttb); tc.Size=UDim2.new(0,36,0,36); tc.Position=UDim2.new(1,-42,0,2)
-    tc.BackgroundColor3=Color3.fromRGB(180,40,40); tc.Text="×"; tc.TextColor3=Color3.new(1,1,1); tc.Font=Enum.Font.GothamBold; tc.TextSize=22
-    Instance.new("UICorner",tc).CornerRadius=UDim.new(0,10); tc.MouseButton1Click:Connect(function() tg:Destroy() end)
+    ttl.Text="Teleport to Player"; ttl.TextColor3=Color3.fromRGB(200,200,255); ttl.Font=Enum.Font.GothamBold; ttl.TextSize=11
+    local tc=Instance.new("TextButton",ttb); tc.Size=UDim2.new(0,23,0,23); tc.Position=UDim2.new(1,-26,0,1)
+    tc.BackgroundColor3=Color3.fromRGB(180,40,40); tc.Text="×"; tc.TextColor3=Color3.new(1,1,1); tc.Font=Enum.Font.GothamBold; tc.TextSize=14
+    Instance.new("UICorner",tc).CornerRadius=UDim.new(0,6); tc.MouseButton1Click:Connect(function() tg:Destroy() end)
     makeDraggable(ttb,tf)
-    local ts=Instance.new("ScrollingFrame",tf); ts.Size=UDim2.new(1,-20,1,-50); ts.Position=UDim2.new(0,10,0,45)
-    ts.BackgroundTransparency=1; ts.ScrollBarThickness=6; Instance.new("UIListLayout",ts).Padding=UDim.new(0,8)
+    local ts=Instance.new("ScrollingFrame",tf); ts.Size=UDim2.new(1,-12,1,-32); ts.Position=UDim2.new(0,6,0,28)
+    ts.BackgroundTransparency=1; ts.ScrollBarThickness=4; Instance.new("UIListLayout",ts).Padding=UDim.new(0,5)
     local function fill()
         for _,c in ipairs(ts:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
         local pl={}; for _,p in ipairs(Players:GetPlayers()) do if isValidTarget(p) then pl[#pl+1]=p end end
         table.sort(pl,function(a,b) return a.Name:lower()<b.Name:lower() end)
         for _,p in ipairs(pl) do
-            local b=Instance.new("TextButton",ts); b.Size=UDim2.new(1,0,0,48); b.BackgroundColor3=Color3.fromRGB(35,35,45)
-            b.Text=p.Name; b.TextColor3=Color3.new(1,1,1); b.Font=Enum.Font.GothamSemibold; b.TextSize=20; b.TextScaled=true
-            Instance.new("UICorner",b).CornerRadius=UDim.new(0,10)
+            local b=Instance.new("TextButton",ts); b.Size=UDim2.new(1,0,0,30); b.BackgroundColor3=Color3.fromRGB(35,35,45)
+            b.Text=p.Name; b.TextColor3=Color3.new(1,1,1); b.Font=Enum.Font.GothamSemibold; b.TextSize=12; b.TextScaled=false
+            Instance.new("UICorner",b).CornerRadius=UDim.new(0,6)
             b.MouseEnter:Connect(function() TweenService:Create(b,TweenInfo.new(.2),{BackgroundColor3=Color3.fromRGB(55,55,70)}):Play() end)
             b.MouseLeave:Connect(function() TweenService:Create(b,TweenInfo.new(.2),{BackgroundColor3=Color3.fromRGB(35,35,45)}):Play() end)
             b.MouseButton1Click:Connect(function() tpTo(p) end) end
-        ts.CanvasSize=UDim2.new(0,0,0,#pl*56)
+        ts.CanvasSize=UDim2.new(0,0,0,#pl*35)
     end; fill(); task.delay(.3,fill)
 end)
 createAction(utlSec,"Server Hop",function()
