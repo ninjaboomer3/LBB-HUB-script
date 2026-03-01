@@ -34,41 +34,11 @@ local lockedGuis = {} -- [ScreenGui] = true
 --==================================================
 local function forceReveal(obj)
     pcall(function()
-        -- 1. Visibility
         if obj:IsA("ScreenGui") then
             obj.Enabled = true
             obj.DisplayOrder = 9999
-
         elseif obj:IsA("GuiObject") then
             obj.Visible = true
-            obj.ZIndex = 100
-
-            -- 2. All transparency types
-            if obj:IsA("Frame") or obj:IsA("ScrollingFrame")
-                or obj:IsA("TextButton") or obj:IsA("ImageButton")
-                or obj:IsA("TextLabel") or obj:IsA("TextBox")
-                or obj:IsA("ImageLabel") then
-                pcall(function() obj.BackgroundTransparency = 0 end)
-            end
-            if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-                pcall(function() obj.TextTransparency = 0 end)
-                pcall(function() obj.TextStrokeTransparency = 0 end)
-            end
-            if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
-                pcall(function() obj.ImageTransparency = 0 end)
-            end
-
-            -- 3. Remove clipping that hides children
-            if obj:IsA("Frame") or obj:IsA("ScrollingFrame") then
-                pcall(function() obj.ClipsDescendants = false end)
-            end
-        end
-
-        -- 4. Fix UIScale if it's hiding things
-        if obj:IsA("UIScale") then
-            if obj.Scale <= 0.01 then
-                obj.Scale = 1
-            end
         end
     end)
 end
