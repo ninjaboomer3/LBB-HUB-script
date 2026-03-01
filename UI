@@ -1,184 +1,107 @@
 --==================================================
--- ULTIMATE UI REVEALER
+-- ULTIMATE UI REVEALER — NUCLEAR EDITION
+-- Handles: Visible, Enabled, ALL transparencies,
+-- ClipsDescendants, UIScale=0, TweenService overrides, LocalScripts
 --==================================================
 
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 local PlayerGui = player:WaitForChild("PlayerGui")
 
--- Enable all core GUI
+--==================================================
+-- ENABLE ALL CORE GUI
+--==================================================
 for _, coreGuiType in ipairs(Enum.CoreGuiType:GetEnumItems()) do
     pcall(function() StarterGui:SetCoreGuiEnabled(coreGuiType, true) end)
 end
 
 --==================================================
--- PANEL FIRST — so the script is useful even if
--- anything below errors
+-- LOCKED GUIS TABLE
 --==================================================
-local panel = Instance.new("ScreenGui")
-panel.Name = "UltimateUIRevealerPanel"
-panel.ResetOnSpawn = false
-panel.DisplayOrder = 99999
-panel.Enabled = true
-panel.Parent = PlayerGui
-
-local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 300, 0, 400)
-main.Position = UDim2.new(1, -310, 0, 60)
-main.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-main.BorderSizePixel = 0
-main.Parent = panel
-Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 40)
-title.BackgroundTransparency = 1
-title.Text = "Ultimate UI Revealer"
-title.TextColor3 = Color3.new(1, 1, 1)
-title.TextScaled = true
-title.Font = Enum.Font.GothamBold
-title.Parent = main
-
-local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -10, 1, -50)
-scroll.Position = UDim2.new(0, 5, 0, 45)
-scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-scroll.ScrollBarThickness = 6
-scroll.BackgroundTransparency = 1
-scroll.BorderSizePixel = 0
-scroll.Parent = main
-
-local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0, 5)
-layout.Parent = scroll
-
-layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 5)
-end)
+local lockedGuis = {} -- [ScreenGui] = true
 
 --==================================================
--- STATE
+-- NUCLEAR FORCE REVEAL
 --==================================================
-local lockedGuis = {}
-local toggled = {}
-local createdButtons = {}
-local descConns = {}
-
---==================================================
--- NUCLEAR REVEAL
--- Runs ONCE on toggle to blast the UI open.
--- Fixes: Visible, Enabled, all transparencies,
--- UIScale=0, CanvasGroup, ClipsDescendants.
--- Does NOT touch Size or Position.
---==================================================
-local function nuclearReveal(obj)
+local function forceReveal(obj)
     pcall(function()
         if obj:IsA("ScreenGui") then
             obj.Enabled = true
             obj.DisplayOrder = 9999
 
-        elseif obj:IsA("CanvasGroup") then
-            obj.Visible = true
-            obj.GroupTransparency = 0
-
         elseif obj:IsA("GuiObject") then
             obj.Visible = true
             obj.ZIndex = 100
-            pcall(function() obj.BackgroundTransparency = 0 end)
-            pcall(function() obj.TextTransparency = 0 end)
-            pcall(function() obj.TextStrokeTransparency = 0 end)
-            pcall(function() obj.ImageTransparency = 0 end)
-            if obj:IsA("Frame") or obj:IsA("ScrollingFrame") then
-                obj.ClipsDescendants = false
+
+            if obj:IsA("Frame") or obj:IsA("ScrollingFrame")
+                or obj:IsA("TextButton") or obj:IsA("ImageButton")
+                or obj:IsA("TextLabel") or obj:IsA("TextBox")
+                or obj:IsA("ImageLabel") then
+                pcall(function() obj.BackgroundTransparency = 0 end)
+            end
+            if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+                pcall(function() obj.TextTransparency = 0 end)
+                pcall(function() obj.TextStrokeTransparency = 0 end)
+            end
+            if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+                pcall(function() obj.ImageTransparency = 0 end)
             end
 
-        elseif obj:IsA("UIScale") then
-            if obj.Scale <= 0.01 then obj.Scale = 1 end
+            if obj:IsA("Frame") or obj:IsA("ScrollingFrame") then
+                pcall(function() obj.ClipsDescendants = false end)
+            end
+        end
+
+        if obj:IsA("UIScale") then
+            if obj.Scale <= 0.01 then
+                obj.Scale = 1
+            end
         end
     end)
 end
 
-local function deepNuclearReveal(root)
-    nuclearReveal(root)
+local function deepReveal(root)
+    forceReveal(root)
     for _, desc in ipairs(root:GetDescendants()) do
-        nuclearReveal(desc)
+        forceReveal(desc)
     end
 end
 
 --==================================================
--- LIGHT MAINTAIN
--- Runs every heartbeat — ONLY keeps Visible/Enabled.
--- Never touches transparency or styling.
+-- HOOK __NAMECALL: Intercept TweenService
 --==================================================
-local function lightMaintain(obj)
-    pcall(function()
-        if obj:IsA("ScreenGui") then
-            if not obj.Enabled then obj.Enabled = true end
-        elseif obj:IsA("GuiObject") then
-            if not obj.Visible then obj.Visible = true end
-        elseif obj:IsA("UIScale") then
-            if obj.Scale <= 0.01 then obj.Scale = 1 end
-        elseif obj:IsA("CanvasGroup") then
-            if not obj.Visible then obj.Visible = true end
-            if obj.GroupTransparency >= 1 then obj.GroupTransparency = 0 end
-        end
-    end)
-end
+local mt = getrawmetatable(game)
+local oldNamecall = mt.__namecall
 
-local function deepLightMaintain(root)
-    lightMaintain(root)
-    for _, desc in ipairs(root:GetDescendants()) do
-        lightMaintain(desc)
-    end
-end
-
---==================================================
--- TWEEN HOOK
--- After any tween finishes on a locked GUI,
--- re-runs nuclear reveal to undo close animations.
---==================================================
 pcall(function()
-    local mt = getrawmetatable(game)
-    local oldNamecall = mt.__namecall
     setreadonly(mt, false)
     mt.__namecall = newcclosure(function(self, ...)
         local method = getnamecallmethod()
+        local args = {...}
 
-        if method == "Play" and typeof(self) == "Instance" then
-            pcall(function()
-                if self:IsA("Tween") and self.Instance then
-                    local ok, anc = pcall(function()
-                        return self.Instance:FindFirstAncestorOfClass("ScreenGui")
-                    end)
-                    if ok and anc and lockedGuis[anc] then
-                        local info = self.TweenInfo
-                        local dur = info and (info.Time + info.DelayTime) or 1
-                        task.delay(dur + 0.05, function()
-                            if lockedGuis[anc] then deepNuclearReveal(anc) end
-                        end)
-                    end
-                end
-            end)
-        elseif (method == "TweenSize" or method == "TweenPosition" or method == "TweenSizeAndPosition")
-            and typeof(self) == "Instance" then
-            pcall(function()
+        if method == "Play" and typeof(self) == "Instance" and self:IsA("Tween") then
+            local target = self.Instance
+            if target then
                 local ok, anc = pcall(function()
-                    return self:FindFirstAncestorOfClass("ScreenGui")
+                    return target:FindFirstAncestorOfClass("ScreenGui")
                 end)
                 if ok and anc and lockedGuis[anc] then
-                    local args = {...}
-                    local dur = (type(args[4]) == "number" and args[4]) or 1
-                    task.delay(dur + 0.05, function()
-                        if lockedGuis[anc] then deepNuclearReveal(anc) end
+                    local tweenInfo = self.TweenInfo
+                    local duration = tweenInfo and (tweenInfo.Time + tweenInfo.DelayTime) or 1
+                    task.delay(duration + 0.05, function()
+                        if lockedGuis[anc] then
+                            deepReveal(anc)
+                        end
                     end)
                 end
-            end)
+            end
         end
 
         return oldNamecall(self, ...)
@@ -215,7 +138,7 @@ local function matches(obj, uiName)
 end
 
 --==================================================
--- REMOTE ARG SETS
+-- ARG SETS FOR REMOTES
 --==================================================
 local REMOTE_ARG_SETS = {
     {},
@@ -228,8 +151,9 @@ local REMOTE_ARG_SETS = {
     {"open", player}, {player, "open"},
 }
 
-local function spamRemote(remote)
-    for _ = 1, 3 do
+local function spamRemote(remote, times)
+    times = times or 3
+    for _ = 1, times do
         for _, args in ipairs(REMOTE_ARG_SETS) do
             pcall(function()
                 if remote:IsA("RemoteEvent") then
@@ -268,7 +192,7 @@ local function triggerInteractions(uiName)
                         table.insert(fired, "ClickDetector: " .. obj:GetFullName())
 
                     elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                        task.spawn(function() spamRemote(obj) end)
+                        task.spawn(function() spamRemote(obj, 3) end)
                         table.insert(fired, obj.ClassName .. ": " .. obj:GetFullName())
 
                     elseif obj:IsA("BindableEvent") then
@@ -287,7 +211,6 @@ local function triggerInteractions(uiName)
         end
     end
 
-    -- Buttons inside the GUI itself
     local guiObj = PlayerGui:FindFirstChild(uiName)
     if guiObj then
         for _, obj in ipairs(guiObj:GetDescendants()) do
@@ -298,7 +221,7 @@ local function triggerInteractions(uiName)
     end
 
     if #fired > 0 then
-        print("[UIRevealer] Fired " .. #fired .. " for '" .. uiName .. "':")
+        print("[UIRevealer] Fired " .. #fired .. " interaction(s) for '" .. uiName .. "':")
         for _, s in ipairs(fired) do print("  -> " .. s) end
     else
         print("[UIRevealer] Nothing matched for '" .. uiName .. "'")
@@ -306,11 +229,13 @@ local function triggerInteractions(uiName)
 end
 
 --==================================================
--- LOCK / UNLOCK
+-- LOCK GUI
 --==================================================
+local descConns = {}
+
 local function lockGui(gui)
     lockedGuis[gui] = true
-    deepNuclearReveal(gui)
+    deepReveal(gui)
 
     for _, obj in ipairs(gui:GetDescendants()) do
         if obj:IsA("LocalScript") then
@@ -321,7 +246,7 @@ local function lockGui(gui)
     if descConns[gui] then descConns[gui]:Disconnect() end
     descConns[gui] = gui.DescendantAdded:Connect(function(desc)
         if lockedGuis[gui] then
-            task.defer(function() nuclearReveal(desc) end)
+            task.defer(function() forceReveal(desc) end)
         end
     end)
 end
@@ -333,25 +258,72 @@ local function unlockGui(gui)
 end
 
 --==================================================
+-- PANEL CREATION
+--==================================================
+local panel = Instance.new("ScreenGui")
+panel.Name = "UltimateUIRevealerPanel"
+panel.ResetOnSpawn = false
+panel.DisplayOrder = 99999
+panel.Enabled = true
+panel.Parent = PlayerGui
+
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 300, 0, 400)
+main.Position = UDim2.new(1, -310, 0, 60)
+main.BackgroundColor3 = Color3.fromRGB(25,25,30)
+main.BorderSizePixel = 0
+main.Parent = panel
+Instance.new("UICorner", main).CornerRadius = UDim.new(0,12)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,0,0,40)
+title.BackgroundTransparency = 1
+title.Text = "Ultimate UI Revealer"
+title.TextColor3 = Color3.new(1,1,1)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.Parent = main
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1,-10,1,-50)
+scroll.Position = UDim2.new(0,5,0,45)
+scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.ScrollBarThickness = 6
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.Parent = main
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0,5)
+layout.Parent = scroll
+
+layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 5)
+end)
+
+--==================================================
 -- BUTTON LOGIC
 --==================================================
+local toggled = {}
+local createdButtons = {}
+
 local function createButton(gui)
     if createdButtons[gui] then return end
     createdButtons[gui] = true
 
     local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, 0, 0, 35)
-    button.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-    button.TextColor3 = Color3.new(1, 1, 1)
+    button.Size = UDim2.new(1,0,0,35)
+    button.BackgroundColor3 = Color3.fromRGB(50,50,65)
+    button.TextColor3 = Color3.new(1,1,1)
     button.TextScaled = true
     button.Font = Enum.Font.Gotham
     button.BorderSizePixel = 0
     button.Parent = scroll
-    Instance.new("UICorner", button).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", button).CornerRadius = UDim.new(0,8)
 
     local function update()
         local on = toggled[gui]
-        button.BackgroundColor3 = on and Color3.fromRGB(40, 100, 40) or Color3.fromRGB(50, 50, 65)
+        button.BackgroundColor3 = on and Color3.fromRGB(40,100,40) or Color3.fromRGB(50,50,65)
         button.Text = gui.Name .. (on and " [REVEALED]" or " [OFF]")
     end
 
@@ -360,11 +332,10 @@ local function createButton(gui)
             toggled[gui] = true
             lockGui(gui)
             triggerInteractions(gui.Name)
-            -- Re-nuke every 0.2s for 3s to catch delayed server responses
             task.spawn(function()
-                for _ = 1, 15 do
+                for i = 1, 15 do
                     task.wait(0.2)
-                    if toggled[gui] then deepNuclearReveal(gui) end
+                    if toggled[gui] then deepReveal(gui) end
                 end
             end)
         else
@@ -389,24 +360,23 @@ populate()
 
 PlayerGui.ChildAdded:Connect(function(child)
     if child:IsA("ScreenGui") and child ~= panel then
-        task.wait()
-        createButton(child)
+        task.wait(); createButton(child)
     end
 end)
 
 --==================================================
--- HEARTBEAT — light maintain only
+-- HEARTBEAT: enforce locked GUIs
 --==================================================
 RunService.Heartbeat:Connect(function()
     for gui, isOn in pairs(toggled) do
         if isOn and gui and gui.Parent then
-            deepLightMaintain(gui)
+            deepReveal(gui)
         end
     end
 end)
 
 --==================================================
--- U KEY TOGGLE
+-- TOGGLE PANEL WITH U KEY
 --==================================================
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
@@ -415,4 +385,4 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("🟢 Ultimate UI Revealer loaded.")
+print("🟢 Ultimate UI Revealer — Nuclear Edition loaded.")
