@@ -1,0 +1,293 @@
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local PlayerGui = player:WaitForChild("PlayerGui")
+
+for _, coreGuiType in ipairs(Enum.CoreGuiType:GetEnumItems()) do
+    pcall(function() StarterGui:SetCoreGuiEnabled(coreGuiType, true) end)
+end
+
+local lockedGuis = {}
+local originalPositions = {}
+
+--==================================================
+-- METATABLE HOOK — compatible with Delta AND Xeno
+--==================================================
+local function hookHandler(self, prop, value)
+    pcall(function()
+        local root = nil
+        pcall(function()
+            local anc = self
+            for _ = 1, 20 do
+                if not anc or not anc.Parent then break end
+                if anc:IsA("ScreenGui") then root = anc; break end
+                anc = anc.Parent
+            end
+        end)
+
+        if root and lockedGuis[root] then
+            if prop == "Visible" and value == false then return end
+            if prop == "Enabled" and value == false then return end
+
+            if prop == "Position" and typeof(value) == "UDim2" then
+                local xOff = math.abs(value.X.Scale) >= 1.5 or math.abs(value.X.Offset) >= 3000
+                local yOff = math.abs(value.Y.Scale) >= 1.5 or math.abs(value.Y.Offset) >= 3000
+                if xOff or yOff then return end
+            end
+
+            if prop == "Scale" and typeof(value) == "number" and value < 0.05 then return end
+
+            if prop == "Size" and typeof(value) == "UDim2" then
+                if value.X.Scale < 0.01 and value.X.Offset < 2
+                and value.Y.Scale < 0.01 and value.Y.Offset < 2 then return end
+            end
+        end
+    end)
+end
+
+-- Try hookmetamethod first (Xeno), fall back to raw mt hook (Delta)
+local hooked = false
+pcall(function()
+    if hookmetamethod then
+        hookmetamethod(game, "__newindex", newcclosure(function(self, prop, value)
+            hookHandler(self, prop, value)
+            -- call original via getrawmetatable
+            return getrawmetatable(game).__newindex(self, prop, value)
+        end))
+        hooked = true
+        print("[UIRevealer] Using hookmetamethod (Xeno mode)")
+    end
+end)
+
+if not hooked then
+    pcall(function()
+        local mt = getrawmetatable(game)
+        local oldIndex = mt.__newindex
+        setreadonly(mt, false)
+        mt.__newindex = newcclosure(function(self, prop, value)
+            hookHandler(self, prop, value)
+            return oldIndex(self, prop, value)
+        end)
+        setreadonly(mt, true)
+        print("[UIRevealer] Using raw mt hook (Delta mode)")
+    end)
+end
+
+--==================================================
+-- HELPERS
+--==================================================
+local function isOffScreen(pos)
+    local xOff = math.abs(pos.X.Scale) >= 1.5 or math.abs(pos.X.Offset) >= 3000
+    local yOff = math.abs(pos.Y.Scale) >= 1.5 or math.abs(pos.Y.Offset) >= 3000
+    return xOff or yOff
+end
+
+local function isTinySize(size, absSize)
+    if size.X.Scale < 0.01 and size.X.Offset < 2
+    and size.Y.Scale < 0.01 and size.Y.Offset < 2 then return true end
+    if absSize and absSize.X < 2 and absSize.Y < 2 then return true end
+    return false
+end
+
+--==================================================
+-- REVEAL
+--==================================================
+local function revealObj(obj, isRootFrame)
+    pcall(function()
+        if obj:IsA("ScreenGui") then
+            obj.Enabled = true
+        elseif obj:IsA("GuiObject") then
+            obj.Visible = true
+
+            if isRootFrame and isOffScreen(obj.Position) then
+                if not originalPositions[obj] then
+                    originalPositions[obj] = obj.Position
+                end
+                obj.Position = UDim2.new(0.5, 0, 0.5, 0)
+                obj.AnchorPoint = Vector2.new(0.5, 0.5)
+            end
+
+            if isRootFrame and isTinySize(obj.Size, obj.AbsoluteSize) then
+                if not originalPositions[tostring(obj).."s"] then
+                    originalPositions[tostring(obj).."s"] = obj.Size
+                end
+                obj.Size = UDim2.new(0.8, 0, 0.8, 0)
+            end
+        end
+
+        if obj:IsA("UIScale") and obj.Scale < 0.05 then
+            obj.Scale = 1
+        end
+    end)
+end
+
+local function deepReveal(root)
+    revealObj(root, false)
+    for _, child in ipairs(root:GetChildren()) do
+        revealObj(child, true)
+        for _, desc in ipairs(child:GetDescendants()) do
+            revealObj(desc, false)
+        end
+    end
+end
+
+local function deepRestore(root)
+    for _, child in ipairs(root:GetChildren()) do
+        pcall(function()
+            if originalPositions[child] then
+                child.Position = originalPositions[child]
+                originalPositions[child] = nil
+            end
+        end)
+    end
+end
+
+--==================================================
+-- LOCK / UNLOCK
+--==================================================
+local descConns = {}
+
+local function lockGui(gui)
+    lockedGuis[gui] = true
+    deepReveal(gui)
+
+    if descConns[gui] then descConns[gui]:Disconnect() end
+    descConns[gui] = gui.DescendantAdded:Connect(function(desc)
+        if lockedGuis[gui] then
+            task.defer(function() revealObj(desc, false) end)
+        end
+    end)
+end
+
+local function unlockGui(gui)
+    lockedGuis[gui] = nil
+    if descConns[gui] then descConns[gui]:Disconnect(); descConns[gui] = nil end
+    deepRestore(gui)
+    pcall(function() gui.Enabled = false end)
+end
+
+--==================================================
+-- PANEL
+--==================================================
+local panel = Instance.new("ScreenGui")
+panel.Name = "UIRevealerPanel"
+panel.ResetOnSpawn = false
+panel.DisplayOrder = 99999
+panel.Enabled = true
+panel.Parent = PlayerGui
+
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 280, 0, 380)
+main.Position = UDim2.new(1, -290, 0, 60)
+main.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+main.BorderSizePixel = 0
+main.Parent = panel
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 38)
+title.BackgroundTransparency = 1
+title.Text = "UI Revealer"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.Parent = main
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, -10, 1, -48)
+scroll.Position = UDim2.new(0, 5, 0, 43)
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.ScrollBarThickness = 5
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.Parent = main
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 4)
+layout.Parent = scroll
+
+layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 5)
+end)
+
+local toggled = {}
+local createdButtons = {}
+
+local function createButton(gui)
+    if createdButtons[gui] then return end
+    createdButtons[gui] = true
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 34)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.TextScaled = true
+    btn.Font = Enum.Font.Gotham
+    btn.BorderSizePixel = 0
+    btn.Text = gui.Name .. " [OFF]"
+    btn.Parent = scroll
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 7)
+
+    local function update()
+        local on = toggled[gui]
+        btn.BackgroundColor3 = on and Color3.fromRGB(35, 110, 35) or Color3.fromRGB(45, 45, 60)
+        btn.Text = gui.Name .. (on and " [ON]" or " [OFF]")
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        if not toggled[gui] then
+            toggled[gui] = true
+            lockGui(gui)
+        else
+            toggled[gui] = false
+            unlockGui(gui)
+        end
+        update()
+    end)
+
+    update()
+end
+
+local function populate()
+    for _, gui in ipairs(PlayerGui:GetChildren()) do
+        if gui:IsA("ScreenGui") and gui ~= panel then
+            createButton(gui)
+        end
+    end
+end
+
+populate()
+
+PlayerGui.ChildAdded:Connect(function(child)
+    if child:IsA("ScreenGui") and child ~= panel then
+        task.wait()
+        createButton(child)
+    end
+end)
+
+--==================================================
+-- HEARTBEAT FALLBACK
+--==================================================
+local timer = 0
+RunService.Heartbeat:Connect(function(dt)
+    timer += dt
+    if timer < 0.2 then return end
+    timer = 0
+    for gui, on in pairs(toggled) do
+        if on and gui and gui.Parent then
+            deepReveal(gui)
+        end
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.U then
+        panel.Enabled = not panel.Enabled
+    end
+end)
+
+print("UI Revealer — Delta & Xeno Edition loaded.")
