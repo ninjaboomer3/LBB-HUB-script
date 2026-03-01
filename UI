@@ -1,7 +1,5 @@
 --==================================================
 -- ULTIMATE UI REVEALER — NUCLEAR EDITION
--- Handles: Visible, Enabled, ALL transparencies,
--- ClipsDescendants, UIScale=0, TweenService overrides, LocalScripts
 --==================================================
 
 local Players = game:GetService("Players")
@@ -25,21 +23,20 @@ end
 --==================================================
 -- LOCKED GUIS TABLE
 --==================================================
-local lockedGuis = {} -- [ScreenGui] = true
+local lockedGuis = {}
 
 --==================================================
--- NUCLEAR FORCE REVEAL
+-- NUCLEAR REVEAL — runs ONCE when you toggle ON
+-- Blasts through every hiding method to force open
 --==================================================
-local function forceReveal(obj)
+local function nuclearReveal(obj)
     pcall(function()
         if obj:IsA("ScreenGui") then
             obj.Enabled = true
             obj.DisplayOrder = 9999
-
         elseif obj:IsA("GuiObject") then
             obj.Visible = true
             obj.ZIndex = 100
-
             if obj:IsA("Frame") or obj:IsA("ScrollingFrame")
                 or obj:IsA("TextButton") or obj:IsA("ImageButton")
                 or obj:IsA("TextLabel") or obj:IsA("TextBox")
@@ -53,29 +50,48 @@ local function forceReveal(obj)
             if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
                 pcall(function() obj.ImageTransparency = 0 end)
             end
-
             if obj:IsA("Frame") or obj:IsA("ScrollingFrame") then
                 pcall(function() obj.ClipsDescendants = false end)
             end
         end
-
         if obj:IsA("UIScale") then
-            if obj.Scale <= 0.01 then
-                obj.Scale = 1
-            end
+            if obj.Scale <= 0.01 then obj.Scale = 1 end
         end
     end)
 end
 
-local function deepReveal(root)
-    forceReveal(root)
+local function deepNuclearReveal(root)
+    nuclearReveal(root)
     for _, desc in ipairs(root:GetDescendants()) do
-        forceReveal(desc)
+        nuclearReveal(desc)
+    end
+end
+
+--==================================================
+-- LIGHT REVEAL — runs every heartbeat
+-- ONLY touches Visible/Enabled, nothing else
+-- This prevents corrupting regular game UI styling
+--==================================================
+local function lightReveal(obj)
+    pcall(function()
+        if obj:IsA("ScreenGui") then
+            if not obj.Enabled then obj.Enabled = true end
+        elseif obj:IsA("GuiObject") then
+            if not obj.Visible then obj.Visible = true end
+        end
+    end)
+end
+
+local function deepLightReveal(root)
+    lightReveal(root)
+    for _, desc in ipairs(root:GetDescendants()) do
+        lightReveal(desc)
     end
 end
 
 --==================================================
 -- HOOK __NAMECALL: Intercept TweenService
+-- Re-nukes after close tweens finish
 --==================================================
 local mt = getrawmetatable(game)
 local oldNamecall = mt.__namecall
@@ -96,9 +112,7 @@ pcall(function()
                     local tweenInfo = self.TweenInfo
                     local duration = tweenInfo and (tweenInfo.Time + tweenInfo.DelayTime) or 1
                     task.delay(duration + 0.05, function()
-                        if lockedGuis[anc] then
-                            deepReveal(anc)
-                        end
+                        if lockedGuis[anc] then deepNuclearReveal(anc) end
                     end)
                 end
             end
@@ -235,7 +249,7 @@ local descConns = {}
 
 local function lockGui(gui)
     lockedGuis[gui] = true
-    deepReveal(gui)
+    deepNuclearReveal(gui)
 
     for _, obj in ipairs(gui:GetDescendants()) do
         if obj:IsA("LocalScript") then
@@ -246,7 +260,7 @@ local function lockGui(gui)
     if descConns[gui] then descConns[gui]:Disconnect() end
     descConns[gui] = gui.DescendantAdded:Connect(function(desc)
         if lockedGuis[gui] then
-            task.defer(function() forceReveal(desc) end)
+            task.defer(function() nuclearReveal(desc) end)
         end
     end)
 end
@@ -332,10 +346,11 @@ local function createButton(gui)
             toggled[gui] = true
             lockGui(gui)
             triggerInteractions(gui.Name)
+            -- Re-nuke every 0.2s for 3s to catch delayed server responses
             task.spawn(function()
-                for i = 1, 15 do
+                for _ = 1, 15 do
                     task.wait(0.2)
-                    if toggled[gui] then deepReveal(gui) end
+                    if toggled[gui] then deepNuclearReveal(gui) end
                 end
             end)
         else
@@ -365,12 +380,12 @@ PlayerGui.ChildAdded:Connect(function(child)
 end)
 
 --==================================================
--- HEARTBEAT: enforce locked GUIs
+-- HEARTBEAT — light only, never touches styling
 --==================================================
 RunService.Heartbeat:Connect(function()
     for gui, isOn in pairs(toggled) do
         if isOn and gui and gui.Parent then
-            deepReveal(gui)
+            deepLightReveal(gui)
         end
     end
 end)
