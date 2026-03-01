@@ -1,5 +1,5 @@
 --==================================================
--- ULTIMATE UI REVEALER — NUCLEAR EDITION
+-- ULTIMATE UI REVEALER
 --==================================================
 
 local Players = game:GetService("Players")
@@ -12,290 +12,13 @@ local Workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
 local PlayerGui = player:WaitForChild("PlayerGui")
 
---==================================================
--- ENABLE ALL CORE GUI
---==================================================
+-- Enable all core GUI
 for _, coreGuiType in ipairs(Enum.CoreGuiType:GetEnumItems()) do
     pcall(function() StarterGui:SetCoreGuiEnabled(coreGuiType, true) end)
 end
 
 --==================================================
--- LOCKED GUIS TABLE
---==================================================
-local lockedGuis = {}
-
---==================================================
--- NUCLEAR REVEAL — runs ONCE when you toggle a GUI on
--- Forces open every possible hiding method:
---   Visible/Enabled, ALL transparencies, UIScale,
---   CanvasGroup.GroupTransparency, ClipsDescendants
--- Does NOT touch Position or Size
---==================================================
-local function nuclearReveal(obj)
-    pcall(function()
-        if obj:IsA("ScreenGui") then
-            obj.Enabled = true
-            obj.DisplayOrder = 9999
-
-        elseif obj:IsA("CanvasGroup") then
-            obj.Visible = true
-            obj.GroupTransparency = 0
-
-        elseif obj:IsA("GuiObject") then
-            obj.Visible = true
-            obj.ZIndex = 100
-            pcall(function() obj.BackgroundTransparency = 0 end)
-            pcall(function() obj.TextTransparency = 0 end)
-            pcall(function() obj.TextStrokeTransparency = 0 end)
-            pcall(function() obj.ImageTransparency = 0 end)
-            if obj:IsA("Frame") or obj:IsA("ScrollingFrame") then
-                obj.ClipsDescendants = false
-            end
-
-        elseif obj:IsA("UIScale") then
-            if obj.Scale <= 0.01 then obj.Scale = 1 end
-        end
-    end)
-end
-
-local function deepNuclearReveal(root)
-    nuclearReveal(root)
-    for _, desc in ipairs(root:GetDescendants()) do
-        nuclearReveal(desc)
-    end
-end
-
---==================================================
--- LIGHT MAINTAIN — runs every heartbeat on locked GUIs
--- ONLY keeps Visible/Enabled true
--- Does NOT touch transparency or styling
---==================================================
-local function lightMaintain(obj)
-    pcall(function()
-        if obj:IsA("ScreenGui") then
-            if not obj.Enabled then obj.Enabled = true end
-        elseif obj:IsA("GuiObject") then
-            if not obj.Visible then obj.Visible = true end
-        elseif obj:IsA("UIScale") then
-            if obj.Scale <= 0.01 then obj.Scale = 1 end
-        elseif obj:IsA("CanvasGroup") then
-            if not obj.Visible then obj.Visible = true end
-            if obj.GroupTransparency >= 1 then obj.GroupTransparency = 0 end
-        end
-    end)
-end
-
-local function deepLightMaintain(root)
-    lightMaintain(root)
-    for _, desc in ipairs(root:GetDescendants()) do
-        lightMaintain(desc)
-    end
-end
-
---==================================================
--- TWEEN HOOK — intercepts TweenService:Play() and
--- GuiObject:TweenSize/TweenPosition on locked GUIs
--- Re-runs nuclear reveal after tween finishes
---==================================================
-local mt = getrawmetatable(game)
-local oldNamecall = mt.__namecall
-
-pcall(function()
-    setreadonly(mt, false)
-    mt.__namecall = newcclosure(function(self, ...)
-        local method = getnamecallmethod()
-
-        if method == "Play" and typeof(self) == "Instance" then
-            pcall(function()
-                if self:IsA("Tween") and self.Instance then
-                    local ok, anc = pcall(function()
-                        return self.Instance:FindFirstAncestorOfClass("ScreenGui")
-                    end)
-                    if ok and anc and lockedGuis[anc] then
-                        local info = self.TweenInfo
-                        local dur = info and (info.Time + info.DelayTime) or 1
-                        task.delay(dur + 0.05, function()
-                            if lockedGuis[anc] then deepNuclearReveal(anc) end
-                        end)
-                    end
-                end
-            end)
-
-        elseif (method == "TweenSize" or method == "TweenPosition" or method == "TweenSizeAndPosition")
-            and typeof(self) == "Instance" and self:IsA("GuiObject") then
-            pcall(function()
-                local ok, anc = pcall(function()
-                    return self:FindFirstAncestorOfClass("ScreenGui")
-                end)
-                if ok and anc and lockedGuis[anc] then
-                    -- Extract tween duration from args if possible
-                    local args = {...}
-                    local dur = (type(args[4]) == "number" and args[4]) or 1
-                    task.delay(dur + 0.05, function()
-                        if lockedGuis[anc] then deepNuclearReveal(anc) end
-                    end)
-                end
-            end)
-        end
-
-        return oldNamecall(self, ...)
-    end)
-    setreadonly(mt, true)
-end)
-
---==================================================
--- NAME MATCHING
---==================================================
-local function getWords(name)
-    local words = {}
-    for w in name:gmatch("[A-Z][a-z]*") do
-        if #w >= 3 then table.insert(words, w:lower()) end
-    end
-    for w in name:gmatch("[a-zA-Z]+") do
-        if #w >= 3 then table.insert(words, w:lower()) end
-    end
-    return words
-end
-
-local function anyWordMatch(targetName, uiName)
-    local t = targetName:lower()
-    for _, word in ipairs(getWords(uiName)) do
-        if t:find(word, 1, true) then return true end
-    end
-    return false
-end
-
-local function matches(obj, uiName)
-    if anyWordMatch(obj.Name, uiName) then return true end
-    if obj.Parent and anyWordMatch(obj.Parent.Name, uiName) then return true end
-    return false
-end
-
---==================================================
--- ARG SETS FOR REMOTES
---==================================================
-local REMOTE_ARG_SETS = {
-    {},
-    {true}, {false},
-    {"open"}, {"Open"}, {"show"}, {"Show"},
-    {"toggle"}, {"Toggle"},
-    {1}, {0},
-    {player},
-    {true, player}, {player, true},
-    {"open", player}, {player, "open"},
-}
-
-local function spamRemote(remote)
-    for _ = 1, 3 do
-        for _, args in ipairs(REMOTE_ARG_SETS) do
-            pcall(function()
-                if remote:IsA("RemoteEvent") then
-                    remote:FireServer(table.unpack(args))
-                elseif remote:IsA("RemoteFunction") then
-                    remote:InvokeServer(table.unpack(args))
-                end
-            end)
-            task.wait(0.03)
-        end
-        task.wait(0.1)
-    end
-end
-
---==================================================
--- TRIGGER INTERACTIONS
---==================================================
-local function triggerInteractions(uiName)
-    local fired = {}
-
-    local roots = {ReplicatedStorage, Workspace, PlayerGui}
-    pcall(function() table.insert(roots, player:WaitForChild("PlayerScripts", 1)) end)
-    pcall(function() table.insert(roots, game:GetService("ReplicatedFirst")) end)
-
-    local searched = {}
-    for _, root in ipairs(roots) do
-        if root and not searched[root] then
-            searched[root] = true
-            pcall(function()
-                for _, obj in ipairs(root:GetDescendants()) do
-                    if not matches(obj, uiName) then continue end
-
-                    if obj:IsA("ClickDetector") then
-                        pcall(function() obj.MaxActivationDistance = math.huge end)
-                        pcall(function() fireclickdetector(obj) end)
-                        table.insert(fired, "ClickDetector: " .. obj:GetFullName())
-
-                    elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                        task.spawn(function() spamRemote(obj) end)
-                        table.insert(fired, obj.ClassName .. ": " .. obj:GetFullName())
-
-                    elseif obj:IsA("BindableEvent") then
-                        pcall(function() obj:Fire() end)
-                        pcall(function() obj:Fire(true) end)
-                        pcall(function() obj:Fire("open") end)
-                        table.insert(fired, "BindableEvent: " .. obj:GetFullName())
-
-                    elseif obj:IsA("BindableFunction") then
-                        pcall(function() obj:Invoke() end)
-                        pcall(function() obj:Invoke(true) end)
-                        table.insert(fired, "BindableFunction: " .. obj:GetFullName())
-                    end
-                end
-            end)
-        end
-    end
-
-    local guiObj = PlayerGui:FindFirstChild(uiName)
-    if guiObj then
-        for _, obj in ipairs(guiObj:GetDescendants()) do
-            if obj:IsA("TextButton") or obj:IsA("ImageButton") then
-                pcall(function() obj.MouseButton1Click:Fire() end)
-            end
-        end
-    end
-
-    if #fired > 0 then
-        print("[UIRevealer] Fired " .. #fired .. " for '" .. uiName .. "':")
-        for _, s in ipairs(fired) do print("  -> " .. s) end
-    else
-        print("[UIRevealer] Nothing matched for '" .. uiName .. "'")
-    end
-end
-
---==================================================
--- LOCK / UNLOCK
---==================================================
-local descConns = {}
-
-local function lockGui(gui)
-    lockedGuis[gui] = true
-
-    -- Nuclear reveal once to force it open
-    deepNuclearReveal(gui)
-
-    -- Disable LocalScripts inside that might be fighting us
-    for _, obj in ipairs(gui:GetDescendants()) do
-        if obj:IsA("LocalScript") then
-            pcall(function() obj.Disabled = true end)
-        end
-    end
-
-    -- Nuclear-reveal any new descendants as they arrive
-    if descConns[gui] then descConns[gui]:Disconnect() end
-    descConns[gui] = gui.DescendantAdded:Connect(function(desc)
-        if lockedGuis[gui] then
-            task.defer(function() nuclearReveal(desc) end)
-        end
-    end)
-end
-
-local function unlockGui(gui)
-    lockedGuis[gui] = nil
-    if descConns[gui] then descConns[gui]:Disconnect(); descConns[gui] = nil end
-    pcall(function() gui.Enabled = false end)
-end
-
---==================================================
--- PANEL
+-- PANEL FIRST — before anything that could error
 --==================================================
 local panel = Instance.new("ScreenGui")
 panel.Name = "UltimateUIRevealerPanel"
@@ -339,6 +62,249 @@ layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 end)
 
 --==================================================
+-- LOCKED GUIS
+--==================================================
+local lockedGuis = {}
+
+--==================================================
+-- NUCLEAR REVEAL — called ONCE on toggle
+-- Fixes: Visible, Enabled, all transparencies,
+-- UIScale=0, CanvasGroup, ClipsDescendants
+-- Does NOT touch Position or Size
+--==================================================
+local function nuclearReveal(obj)
+    pcall(function()
+        if obj:IsA("ScreenGui") then
+            obj.Enabled = true
+            obj.DisplayOrder = 9999
+        elseif obj:IsA("CanvasGroup") then
+            obj.Visible = true
+            obj.GroupTransparency = 0
+        elseif obj:IsA("GuiObject") then
+            obj.Visible = true
+            obj.ZIndex = 100
+            pcall(function() obj.BackgroundTransparency = 0 end)
+            pcall(function() obj.TextTransparency = 0 end)
+            pcall(function() obj.TextStrokeTransparency = 0 end)
+            pcall(function() obj.ImageTransparency = 0 end)
+            if obj:IsA("Frame") or obj:IsA("ScrollingFrame") then
+                obj.ClipsDescendants = false
+            end
+        elseif obj:IsA("UIScale") then
+            if obj.Scale <= 0.01 then obj.Scale = 1 end
+        end
+    end)
+end
+
+local function deepNuclearReveal(root)
+    nuclearReveal(root)
+    for _, desc in ipairs(root:GetDescendants()) do
+        nuclearReveal(desc)
+    end
+end
+
+--==================================================
+-- LIGHT MAINTAIN — called every heartbeat
+-- ONLY Visible/Enabled — never touches styling
+--==================================================
+local function deepLightMaintain(root)
+    pcall(function()
+        if root:IsA("ScreenGui") and not root.Enabled then
+            root.Enabled = true
+        end
+    end)
+    for _, desc in ipairs(root:GetDescendants()) do
+        pcall(function()
+            if desc:IsA("GuiObject") and not desc.Visible then
+                desc.Visible = true
+            elseif desc:IsA("CanvasGroup") then
+                if not desc.Visible then desc.Visible = true end
+                if desc.GroupTransparency >= 1 then desc.GroupTransparency = 0 end
+            elseif desc:IsA("UIScale") and desc.Scale <= 0.01 then
+                desc.Scale = 1
+            end
+        end)
+    end
+end
+
+--==================================================
+-- TWEEN HOOK — fully inside pcall
+--==================================================
+pcall(function()
+    local mt = getrawmetatable(game)
+    local oldNamecall = mt.__namecall
+    setreadonly(mt, false)
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if (method == "Play" or method == "TweenSize" or method == "TweenPosition" or method == "TweenSizeAndPosition")
+            and typeof(self) == "Instance" then
+            pcall(function()
+                local target = self:IsA("Tween") and self.Instance or self
+                local ok, anc = pcall(function() return target:FindFirstAncestorOfClass("ScreenGui") end)
+                if not ok then ok, anc = true, (target:IsA("ScreenGui") and target or nil) end
+                if ok and anc and lockedGuis[anc] then
+                    local args = {...}
+                    local dur = 1
+                    if self:IsA("Tween") then
+                        pcall(function() dur = self.TweenInfo.Time + self.TweenInfo.DelayTime end)
+                    elseif type(args[4]) == "number" then
+                        dur = args[4]
+                    end
+                    task.delay(dur + 0.1, function()
+                        if lockedGuis[anc] then deepNuclearReveal(anc) end
+                    end)
+                end
+            end)
+        end
+        return oldNamecall(self, ...)
+    end)
+    setreadonly(mt, true)
+end)
+
+--==================================================
+-- NAME MATCHING
+--==================================================
+local function getWords(name)
+    local words = {}
+    for w in name:gmatch("[A-Z][a-z]*") do
+        if #w >= 3 then table.insert(words, w:lower()) end
+    end
+    for w in name:gmatch("[a-zA-Z]+") do
+        if #w >= 3 then table.insert(words, w:lower()) end
+    end
+    return words
+end
+
+local function anyWordMatch(targetName, uiName)
+    local t = targetName:lower()
+    for _, word in ipairs(getWords(uiName)) do
+        if t:find(word, 1, true) then return true end
+    end
+    return false
+end
+
+local function matches(obj, uiName)
+    if anyWordMatch(obj.Name, uiName) then return true end
+    if obj.Parent and anyWordMatch(obj.Parent.Name, uiName) then return true end
+    return false
+end
+
+--==================================================
+-- REMOTE SPAM
+--==================================================
+local REMOTE_ARG_SETS = {
+    {},
+    {true}, {false},
+    {"open"}, {"Open"}, {"show"}, {"Show"},
+    {"toggle"}, {"Toggle"},
+    {1}, {0},
+    {player},
+    {true, player}, {player, true},
+    {"open", player}, {player, "open"},
+}
+
+local function spamRemote(remote)
+    for _ = 1, 3 do
+        for _, args in ipairs(REMOTE_ARG_SETS) do
+            pcall(function()
+                if remote:IsA("RemoteEvent") then
+                    remote:FireServer(table.unpack(args))
+                elseif remote:IsA("RemoteFunction") then
+                    remote:InvokeServer(table.unpack(args))
+                end
+            end)
+            task.wait(0.03)
+        end
+        task.wait(0.1)
+    end
+end
+
+--==================================================
+-- TRIGGER INTERACTIONS
+--==================================================
+local function triggerInteractions(uiName)
+    local fired = {}
+    local roots = {ReplicatedStorage, Workspace, PlayerGui}
+    pcall(function() table.insert(roots, player:WaitForChild("PlayerScripts", 1)) end)
+    pcall(function() table.insert(roots, game:GetService("ReplicatedFirst")) end)
+
+    local searched = {}
+    for _, root in ipairs(roots) do
+        if root and not searched[root] then
+            searched[root] = true
+            pcall(function()
+                for _, obj in ipairs(root:GetDescendants()) do
+                    if not matches(obj, uiName) then continue end
+                    if obj:IsA("ClickDetector") then
+                        pcall(function() obj.MaxActivationDistance = math.huge end)
+                        pcall(function() fireclickdetector(obj) end)
+                        table.insert(fired, "ClickDetector: " .. obj:GetFullName())
+                    elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                        task.spawn(function() spamRemote(obj) end)
+                        table.insert(fired, obj.ClassName .. ": " .. obj:GetFullName())
+                    elseif obj:IsA("BindableEvent") then
+                        pcall(function() obj:Fire() end)
+                        pcall(function() obj:Fire(true) end)
+                        pcall(function() obj:Fire("open") end)
+                        table.insert(fired, "BindableEvent: " .. obj:GetFullName())
+                    elseif obj:IsA("BindableFunction") then
+                        pcall(function() obj:Invoke() end)
+                        pcall(function() obj:Invoke(true) end)
+                        table.insert(fired, "BindableFunction: " .. obj:GetFullName())
+                    end
+                end
+            end)
+        end
+    end
+
+    -- Fire buttons inside the GUI
+    local guiObj = PlayerGui:FindFirstChild(uiName)
+    if guiObj then
+        for _, obj in ipairs(guiObj:GetDescendants()) do
+            if obj:IsA("TextButton") or obj:IsA("ImageButton") then
+                pcall(function() obj.MouseButton1Click:Fire() end)
+            end
+        end
+    end
+
+    if #fired > 0 then
+        print("[UIRevealer] Fired " .. #fired .. " for '" .. uiName .. "':")
+        for _, s in ipairs(fired) do print("  -> " .. s) end
+    else
+        print("[UIRevealer] Nothing matched for '" .. uiName .. "'")
+    end
+end
+
+--==================================================
+-- LOCK / UNLOCK
+--==================================================
+local descConns = {}
+
+local function lockGui(gui)
+    lockedGuis[gui] = true
+    deepNuclearReveal(gui)
+
+    for _, obj in ipairs(gui:GetDescendants()) do
+        if obj:IsA("LocalScript") then
+            pcall(function() obj.Disabled = true end)
+        end
+    end
+
+    if descConns[gui] then descConns[gui]:Disconnect() end
+    descConns[gui] = gui.DescendantAdded:Connect(function(desc)
+        if lockedGuis[gui] then
+            task.defer(function() nuclearReveal(desc) end)
+        end
+    end)
+end
+
+local function unlockGui(gui)
+    lockedGuis[gui] = nil
+    if descConns[gui] then descConns[gui]:Disconnect(); descConns[gui] = nil end
+    pcall(function() gui.Enabled = false end)
+end
+
+--==================================================
 -- BUTTON LOGIC
 --==================================================
 local toggled = {}
@@ -369,8 +335,7 @@ local function createButton(gui)
             toggled[gui] = true
             lockGui(gui)
             triggerInteractions(gui.Name)
-            -- Re-run nuclear reveal several times over the next 3 seconds
-            -- to catch delayed server responses populating the UI
+            -- Re-nuke every 0.2s for 3s to catch delayed server responses
             task.spawn(function()
                 for _ = 1, 15 do
                     task.wait(0.2)
@@ -405,7 +370,7 @@ PlayerGui.ChildAdded:Connect(function(child)
 end)
 
 --==================================================
--- HEARTBEAT — light maintain only (no transparency touching)
+-- HEARTBEAT — light maintain only
 --==================================================
 RunService.Heartbeat:Connect(function()
     for gui, isOn in pairs(toggled) do
