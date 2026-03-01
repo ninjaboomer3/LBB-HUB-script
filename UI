@@ -1,0 +1,286 @@
+--==================================================
+-- ULTIMATE UI REVEALER
+--==================================================
+
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local player = Players.LocalPlayer
+local PlayerGui = player:WaitForChild("PlayerGui")
+
+--==================================================
+-- ENABLE ALL CORE GUI
+--==================================================
+for _, coreGuiType in ipairs(Enum.CoreGuiType:GetEnumItems()) do
+    pcall(function()
+        StarterGui:SetCoreGuiEnabled(coreGuiType, true)
+    end)
+end
+
+--==================================================
+-- FORCE REVEAL FUNCTIONS (same as reference)
+--==================================================
+local function forceReveal(obj)
+    if not obj:IsA("GuiObject") then return end
+    pcall(function()
+        if obj:IsA("ScreenGui") then
+            obj.Enabled = true
+            obj.DisplayOrder = math.huge
+        else
+            obj.Visible = true
+            obj.ZIndex = math.huge
+        end
+    end)
+end
+
+local function deepReveal(obj)
+    forceReveal(obj)
+    for _, desc in ipairs(obj:GetDescendants()) do
+        forceReveal(desc)
+    end
+end
+
+--==================================================
+-- STRICT NAME MATCH
+--==================================================
+local function strictMatch(a, b)
+    a = a:lower()
+    b = b:lower()
+    if a:find(b, 1, true) or b:find(a, 1, true) then return true end
+    local wordCount, matchCount = 0, 0
+    for word in b:gmatch("[A-Za-z][a-z]+") do
+        if #word >= 4 then
+            wordCount = wordCount + 1
+            if a:find(word:lower(), 1, true) then
+                matchCount = matchCount + 1
+            end
+        end
+    end
+    return wordCount > 0 and matchCount == wordCount
+end
+
+--==================================================
+-- ALL SERVICES TO SEARCH FOR EVENTS/PROMPTS
+--==================================================
+local searchRoots = {
+    ReplicatedStorage,
+    Workspace,
+    player:WaitForChild("PlayerGui"),
+    player:WaitForChild("PlayerScripts"),
+    Players.LocalPlayer.Character or Workspace, -- character too
+}
+-- safely add more services
+for _, svcName in ipairs({"ReplicatedFirst", "StarterGui", "StarterPlayerScripts"}) do
+    pcall(function()
+        table.insert(searchRoots, game:GetService(svcName))
+    end)
+end
+
+--==================================================
+-- TRIGGER ALL MATCHING INTERACTIONS
+--==================================================
+local function triggerInteractions(uiName)
+    local fired = {}
+
+    local function tryFire(obj)
+        local name = obj.Name
+        local parentName = obj.Parent and obj.Parent.Name or ""
+
+        -- ProximityPrompt — fireproximityprompt bypasses distance
+        if obj:IsA("ProximityPrompt") then
+            if strictMatch(name, uiName) or strictMatch(parentName, uiName)
+                or strictMatch(obj.ActionText or "", uiName) then
+                pcall(function() fireproximityprompt(obj) end)
+                table.insert(fired, "ProximityPrompt: " .. obj:GetFullName())
+            end
+
+        -- ClickDetector
+        elseif obj:IsA("ClickDetector") then
+            if strictMatch(name, uiName) or strictMatch(parentName, uiName) then
+                pcall(function() fireclickdetector(obj) end)
+                table.insert(fired, "ClickDetector: " .. obj:GetFullName())
+            end
+
+        -- RemoteEvent — strict match only to avoid kicks
+        elseif obj:IsA("RemoteEvent") then
+            if strictMatch(name, uiName) then
+                pcall(function() obj:FireServer() end)
+                table.insert(fired, "RemoteEvent: " .. obj:GetFullName())
+            end
+
+        -- RemoteFunction — strict match only
+        elseif obj:IsA("RemoteFunction") then
+            if strictMatch(name, uiName) then
+                pcall(function() obj:InvokeServer() end)
+                table.insert(fired, "RemoteFunction: " .. obj:GetFullName())
+            end
+
+        -- BindableEvent — local only, completely safe
+        elseif obj:IsA("BindableEvent") then
+            if strictMatch(name, uiName) or strictMatch(parentName, uiName) then
+                pcall(function() obj:Fire() end)
+                table.insert(fired, "BindableEvent: " .. obj:GetFullName())
+            end
+
+        -- BindableFunction — local only, completely safe
+        elseif obj:IsA("BindableFunction") then
+            if strictMatch(name, uiName) or strictMatch(parentName, uiName) then
+                pcall(function() obj:Invoke() end)
+                table.insert(fired, "BindableFunction: " .. obj:GetFullName())
+            end
+        end
+    end
+
+    -- Search all roots
+    local searched = {}
+    for _, root in ipairs(searchRoots) do
+        if root and not searched[root] then
+            searched[root] = true
+            pcall(function()
+                for _, obj in ipairs(root:GetDescendants()) do
+                    tryFire(obj)
+                end
+            end)
+        end
+    end
+
+    -- Also fire buttons inside the GUI itself
+    local guiObj = PlayerGui:FindFirstChild(uiName)
+    if guiObj then
+        for _, obj in ipairs(guiObj:GetDescendants()) do
+            if obj:IsA("TextButton") or obj:IsA("ImageButton") then
+                pcall(function() obj.MouseButton1Click:Fire() end)
+            end
+        end
+    end
+
+    if #fired > 0 then
+        print("[UIRevealer] Triggered " .. #fired .. " interaction(s) for '" .. uiName .. "':")
+        for _, s in ipairs(fired) do print("  -> " .. s) end
+    else
+        print("[UIRevealer] No matching interactions found for '" .. uiName .. "'")
+    end
+end
+
+--==================================================
+-- PANEL CREATION
+--==================================================
+local panel = Instance.new("ScreenGui")
+panel.Name = "UltimateUIRevealerPanel"
+panel.ResetOnSpawn = false
+panel.DisplayOrder = 9999
+panel.Enabled = true
+panel.Parent = PlayerGui
+
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 300, 0, 400)
+main.Position = UDim2.new(1, -310, 0, 60)
+main.BackgroundColor3 = Color3.fromRGB(25,25,30)
+main.Parent = panel
+Instance.new("UICorner", main).CornerRadius = UDim.new(0,12)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,0,0,40)
+title.BackgroundTransparency = 1
+title.Text = "Ultimate UI Revealer"
+title.TextColor3 = Color3.new(1,1,1)
+title.TextScaled = true
+title.Parent = main
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1,-10,1,-50)
+scroll.Position = UDim2.new(0,5,0,45)
+scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.ScrollBarThickness = 6
+scroll.BackgroundTransparency = 1
+scroll.Parent = main
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0,5)
+layout.Parent = scroll
+
+layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 5)
+end)
+
+--==================================================
+-- BUTTON LOGIC
+--==================================================
+local toggled = {}
+local createdButtons = {}
+
+local function createButton(gui)
+    if createdButtons[gui] then return end
+    createdButtons[gui] = true
+
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(1,0,0,35)
+    button.BackgroundColor3 = Color3.fromRGB(50,50,65)
+    button.TextColor3 = Color3.new(1,1,1)
+    button.TextScaled = true
+    button.Parent = scroll
+    Instance.new("UICorner", button).CornerRadius = UDim.new(0,8)
+
+    local function update()
+        button.Text = gui.Name .. (toggled[gui] and " [REVEALED]" or " [OFF]")
+    end
+
+    button.MouseButton1Click:Connect(function()
+        if not toggled[gui] then
+            triggerInteractions(gui.Name)
+            task.delay(0.25, function()
+                deepReveal(gui)
+            end)
+            toggled[gui] = true
+        else
+            gui.Enabled = false
+            toggled[gui] = false
+        end
+        update()
+    end)
+
+    update()
+end
+
+local function populate()
+    for _, gui in ipairs(PlayerGui:GetChildren()) do
+        if gui:IsA("ScreenGui") and gui ~= panel then
+            createButton(gui)
+        end
+    end
+end
+
+populate()
+
+PlayerGui.ChildAdded:Connect(function(child)
+    if child:IsA("ScreenGui") and child ~= panel then
+        createButton(child)
+    end
+end)
+
+--==================================================
+-- CONTINUOUS ENFORCEMENT FOR TOGGLED GUIS
+--==================================================
+RunService.Heartbeat:Connect(function()
+    for gui, isOn in pairs(toggled) do
+        if isOn then
+            deepReveal(gui)
+        end
+    end
+end)
+
+--==================================================
+-- TOGGLE PANEL WITH U KEY
+--==================================================
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.U then
+        panel.Enabled = not panel.Enabled
+    end
+end)
+
+print("🟢 Ultimate UI Revealer Loaded.")
