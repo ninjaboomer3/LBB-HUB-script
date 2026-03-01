@@ -1,11 +1,15 @@
 --==================================================
--- ULTIMATE UI REVEALER
+-- ULTIMATE UI REVEALER — NUCLEAR EDITION
+-- Handles: Visible, Enabled, ALL transparencies,
+-- Size=0, off-screen Position, ClipsDescendants,
+-- UIScale=0, TweenService overrides, LocalScripts
 --==================================================
 
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
@@ -16,10 +20,119 @@ local PlayerGui = player:WaitForChild("PlayerGui")
 -- ENABLE ALL CORE GUI
 --==================================================
 for _, coreGuiType in ipairs(Enum.CoreGuiType:GetEnumItems()) do
+    pcall(function() StarterGui:SetCoreGuiEnabled(coreGuiType, true) end)
+end
+
+--==================================================
+-- LOCKED GUIS TABLE
+--==================================================
+local lockedGuis = {} -- [ScreenGui] = true
+
+--==================================================
+-- NUCLEAR FORCE REVEAL
+-- Fixes every single method a game uses to hide UI
+--==================================================
+local function forceReveal(obj)
     pcall(function()
-        StarterGui:SetCoreGuiEnabled(coreGuiType, true)
+        -- 1. Visibility
+        if obj:IsA("ScreenGui") then
+            obj.Enabled = true
+            obj.DisplayOrder = 9999
+
+        elseif obj:IsA("GuiObject") then
+            obj.Visible = true
+            obj.ZIndex = 100
+
+            -- 2. All transparency types
+            if obj:IsA("Frame") or obj:IsA("ScrollingFrame")
+                or obj:IsA("TextButton") or obj:IsA("ImageButton")
+                or obj:IsA("TextLabel") or obj:IsA("TextBox")
+                or obj:IsA("ImageLabel") then
+                pcall(function() obj.BackgroundTransparency = 0 end)
+            end
+            if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+                pcall(function() obj.TextTransparency = 0 end)
+                pcall(function() obj.TextStrokeTransparency = 0 end)
+            end
+            if obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+                pcall(function() obj.ImageTransparency = 0 end)
+            end
+
+            -- 3. Fix collapsed size (Size = 0,0,0,0 is a common hide trick)
+            local sx = obj.Size.X.Scale + obj.Size.X.Offset
+            local sy = obj.Size.Y.Scale + obj.Size.Y.Offset
+            if sx == 0 and sy == 0 then
+                obj.Size = UDim2.new(1, 0, 1, 0)
+            end
+
+            -- 4. Fix off-screen position
+            local px = obj.Position.X.Scale
+            local py = obj.Position.Y.Scale
+            if px < -1 or px > 2 or py < -1 or py > 2 then
+                obj.Position = UDim2.new(0, 0, 0, 0)
+            end
+
+            -- 5. Remove clipping that hides children
+            if obj:IsA("Frame") or obj:IsA("ScrollingFrame") then
+                pcall(function() obj.ClipsDescendants = false end)
+            end
+        end
+
+        -- 6. Fix UIScale if it's hiding things
+        if obj:IsA("UIScale") then
+            if obj.Scale <= 0.01 then
+                obj.Scale = 1
+            end
+        end
     end)
 end
+
+local function deepReveal(root)
+    forceReveal(root)
+    for _, desc in ipairs(root:GetDescendants()) do
+        forceReveal(desc)
+    end
+end
+
+--==================================================
+-- HOOK __NAMECALL: Intercept TweenService
+-- Blocks tweens that try to hide/close locked GUIs
+--==================================================
+local mt = getrawmetatable(game)
+local oldNamecall = mt.__namecall
+
+pcall(function()
+    setreadonly(mt, false)
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        local args = {...}
+
+        -- Intercept Tween:Play() — check if this tween targets a locked GUI
+        if method == "Play" and typeof(self) == "Instance" and self:IsA("Tween") then
+            -- Check if tween target is inside a locked GUI
+            local target = self.Instance
+            if target then
+                local ok, anc = pcall(function()
+                    return target:FindFirstAncestorOfClass("ScreenGui")
+                end)
+                if ok and anc and lockedGuis[anc] then
+                    -- Get the tween's goal and check if it's trying to close/hide
+                    local tweenInfo = self.TweenInfo
+                    -- Let it play but immediately re-assert after it would finish
+                    local duration = tweenInfo and (tweenInfo.Time + tweenInfo.DelayTime) or 1
+                    task.delay(duration + 0.05, function()
+                        if lockedGuis[anc] then
+                            deepReveal(anc)
+                        end
+                    end)
+                end
+            end
+        end
+
+        return oldNamecall(self, ...)
+    end)
+    setreadonly(mt, true)
+end)
 
 --==================================================
 -- FORCE ENABLE PROXIMITY PROMPTS
@@ -42,7 +155,6 @@ local function revealAllPrompts()
     end
     print("[UIRevealer] Force-enabled " .. count .. " ProximityPrompt(s).")
 end
-
 revealAllPrompts()
 
 Workspace.DescendantAdded:Connect(function(obj)
@@ -50,39 +162,7 @@ Workspace.DescendantAdded:Connect(function(obj)
 end)
 
 --==================================================
--- MAX FORCE REVEAL
--- Sets every possible visibility-related property
---==================================================
-local function forceReveal(obj)
-    pcall(function()
-        if obj:IsA("ScreenGui") then
-            obj.Enabled = true
-            obj.DisplayOrder = math.huge
-        elseif obj:IsA("GuiObject") then
-            obj.Visible = true
-            obj.ZIndex = math.huge
-            -- also kill any transparency that might hide it
-            if obj:IsA("Frame") or obj:IsA("ScrollingFrame") or obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
-                obj.BackgroundTransparency = 0
-                obj.ImageTransparency = 0
-            end
-            if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-                obj.BackgroundTransparency = 0
-                obj.TextTransparency = 0
-            end
-        end
-    end)
-end
-
-local function deepReveal(obj)
-    forceReveal(obj)
-    for _, desc in ipairs(obj:GetDescendants()) do
-        forceReveal(desc)
-    end
-end
-
---==================================================
--- NAME MATCHING (any word match, lenient)
+-- NAME MATCHING
 --==================================================
 local function getWords(name)
     local words = {}
@@ -111,30 +191,19 @@ local function matches(obj, uiName)
 end
 
 --==================================================
--- ARG SETS
+-- ARG SETS FOR REMOTES
 --==================================================
 local REMOTE_ARG_SETS = {
     {},
-    {true},
-    {false},
-    {"open"},
-    {"Open"},
-    {"show"},
-    {"Show"},
-    {"toggle"},
-    {"Toggle"},
-    {1},
-    {0},
+    {true}, {false},
+    {"open"}, {"Open"}, {"show"}, {"Show"},
+    {"toggle"}, {"Toggle"},
+    {1}, {0},
     {player},
-    {true, player},
-    {player, true},
-    {"open", player},
-    {player, "open"},
+    {true, player}, {player, true},
+    {"open", player}, {player, "open"},
 }
 
---==================================================
--- FIRE A REMOTE WITH ALL ARG SETS, N TIMES
---==================================================
 local function spamRemote(remote, times)
     times = times or 3
     for _ = 1, times do
@@ -153,8 +222,7 @@ local function spamRemote(remote, times)
 end
 
 --==================================================
--- TRIGGER ALL MATCHING INTERACTIONS
--- Fires everything with any word match, multiple times
+-- TRIGGER INTERACTIONS
 --==================================================
 local function triggerInteractions(uiName)
     local fired = {}
@@ -182,7 +250,6 @@ local function triggerInteractions(uiName)
                         table.insert(fired, "ClickDetector: " .. obj:GetFullName())
 
                     elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                        -- spam fire in background
                         task.spawn(function() spamRemote(obj, 3) end)
                         table.insert(fired, obj.ClassName .. ": " .. obj:GetFullName())
 
@@ -202,7 +269,7 @@ local function triggerInteractions(uiName)
         end
     end
 
-    -- Fire buttons inside the GUI
+    -- Fire buttons inside the GUI itself
     local guiObj = PlayerGui:FindFirstChild(uiName)
     if guiObj then
         for _, obj in ipairs(guiObj:GetDescendants()) do
@@ -221,12 +288,51 @@ local function triggerInteractions(uiName)
 end
 
 --==================================================
+-- LOCK GUI
+--==================================================
+local descConns = {}
+
+local function lockGui(gui)
+    lockedGuis[gui] = true
+    deepReveal(gui)
+
+    -- Kill LocalScripts that control visibility
+    for _, obj in ipairs(gui:GetDescendants()) do
+        if obj:IsA("LocalScript") then
+            pcall(function() obj.Disabled = true end)
+        end
+        -- Also try to disconnect all connections on every child
+        pcall(function()
+            if getconnections then
+                for _, conn in ipairs(getconnections(obj.Changed)) do
+                    pcall(function() conn:Disable() end)
+                end
+            end
+        end)
+    end
+
+    -- Reveal new descendants as they arrive
+    if descConns[gui] then descConns[gui]:Disconnect() end
+    descConns[gui] = gui.DescendantAdded:Connect(function(desc)
+        if lockedGuis[gui] then
+            task.defer(function() forceReveal(desc) end)
+        end
+    end)
+end
+
+local function unlockGui(gui)
+    lockedGuis[gui] = nil
+    if descConns[gui] then descConns[gui]:Disconnect(); descConns[gui] = nil end
+    pcall(function() gui.Enabled = false end)
+end
+
+--==================================================
 -- PANEL CREATION
 --==================================================
 local panel = Instance.new("ScreenGui")
 panel.Name = "UltimateUIRevealerPanel"
 panel.ResetOnSpawn = false
-panel.DisplayOrder = 9999
+panel.DisplayOrder = 99999
 panel.Enabled = true
 panel.Parent = PlayerGui
 
@@ -234,6 +340,7 @@ local main = Instance.new("Frame")
 main.Size = UDim2.new(0, 300, 0, 400)
 main.Position = UDim2.new(1, -310, 0, 60)
 main.BackgroundColor3 = Color3.fromRGB(25,25,30)
+main.BorderSizePixel = 0
 main.Parent = panel
 Instance.new("UICorner", main).CornerRadius = UDim.new(0,12)
 
@@ -243,6 +350,7 @@ title.BackgroundTransparency = 1
 title.Text = "Ultimate UI Revealer"
 title.TextColor3 = Color3.new(1,1,1)
 title.TextScaled = true
+title.Font = Enum.Font.GothamBold
 title.Parent = main
 
 local scroll = Instance.new("ScrollingFrame")
@@ -251,6 +359,7 @@ scroll.Position = UDim2.new(0,5,0,45)
 scroll.CanvasSize = UDim2.new(0,0,0,0)
 scroll.ScrollBarThickness = 6
 scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
 scroll.Parent = main
 
 local layout = Instance.new("UIListLayout")
@@ -276,28 +385,32 @@ local function createButton(gui)
     button.BackgroundColor3 = Color3.fromRGB(50,50,65)
     button.TextColor3 = Color3.new(1,1,1)
     button.TextScaled = true
+    button.Font = Enum.Font.Gotham
+    button.BorderSizePixel = 0
     button.Parent = scroll
     Instance.new("UICorner", button).CornerRadius = UDim.new(0,8)
 
     local function update()
-        button.Text = gui.Name .. (toggled[gui] and " [REVEALED]" or " [OFF]")
+        local on = toggled[gui]
+        button.BackgroundColor3 = on and Color3.fromRGB(40,100,40) or Color3.fromRGB(50,50,65)
+        button.Text = gui.Name .. (on and " [REVEALED]" or " [OFF]")
     end
 
     button.MouseButton1Click:Connect(function()
         if not toggled[gui] then
-            -- Fire interactions immediately
-            triggerInteractions(gui.Name)
-            -- Then keep spamming deepReveal as the UI populates
             toggled[gui] = true
+            lockGui(gui)
+            triggerInteractions(gui.Name)
+            -- Spam deepReveal for 3 seconds after firing to fight back against any delayed hides
             task.spawn(function()
-                for i = 1, 10 do
+                for i = 1, 15 do
                     task.wait(0.2)
-                    deepReveal(gui)
+                    if toggled[gui] then deepReveal(gui) end
                 end
             end)
         else
-            gui.Enabled = false
             toggled[gui] = false
+            unlockGui(gui)
         end
         update()
     end)
@@ -317,16 +430,16 @@ populate()
 
 PlayerGui.ChildAdded:Connect(function(child)
     if child:IsA("ScreenGui") and child ~= panel then
-        createButton(child)
+        task.wait(); createButton(child)
     end
 end)
 
 --==================================================
--- HEARTBEAT: enforce toggled GUIs + prompts
+-- HEARTBEAT: enforce locked GUIs + prompts
 --==================================================
 RunService.Heartbeat:Connect(function()
     for gui, isOn in pairs(toggled) do
-        if isOn then
+        if isOn and gui and gui.Parent then
             deepReveal(gui)
         end
     end
@@ -347,4 +460,4 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("🟢 Ultimate UI Revealer Loaded.")
+print("🟢 Ultimate UI Revealer — Nuclear Edition loaded.")
