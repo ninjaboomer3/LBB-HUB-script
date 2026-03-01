@@ -58,14 +58,7 @@ local function forceReveal(obj)
                 pcall(function() obj.ImageTransparency = 0 end)
             end
 
-            -- 3. Fix collapsed size (Size = 0,0,0,0 is a common hide trick)
-            local sx = obj.Size.X.Scale + obj.Size.X.Offset
-            local sy = obj.Size.Y.Scale + obj.Size.Y.Offset
-            if sx == 0 and sy == 0 then
-                obj.Size = UDim2.new(1, 0, 1, 0)
-            end
-
-            -- 4. Remove clipping that hides children
+            -- 3. Remove clipping that hides children
             if obj:IsA("Frame") or obj:IsA("ScrollingFrame") then
                 pcall(function() obj.ClipsDescendants = false end)
             end
