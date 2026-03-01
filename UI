@@ -2,9 +2,6 @@ local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 local PlayerGui = player:WaitForChild("PlayerGui")
@@ -13,147 +10,152 @@ for _, coreGuiType in ipairs(Enum.CoreGuiType:GetEnumItems()) do
     pcall(function() StarterGui:SetCoreGuiEnabled(coreGuiType, true) end)
 end
 
-local lockedGuis = {}
-local descConns = {}
+local lockedGuis = {} -- [ScreenGui] = true
+local originalPositions = {}
 
--- GENTLE reveal: only touches Visible/Enabled, never styling
-local function gentleReveal(obj)
+--==================================================
+-- METATABLE HOOK
+-- Intercepts ALL property writes on GuiObjects
+-- Blocks: Visible=false, Enabled=false,
+--         off-screen Position, tiny UIScale
+--==================================================
+local mt = getrawmetatable(game)
+local oldIndex = mt.__newindex
+
+setreadonly(mt, false)
+mt.__newindex = newcclosure(function(self, prop, value)
+    pcall(function()
+        -- Find which ScreenGui this object belongs to
+        local root = nil
+        pcall(function()
+            local anc = self
+            for _ = 1, 20 do
+                if not anc or not anc.Parent then break end
+                if anc:IsA("ScreenGui") then root = anc; break end
+                anc = anc.Parent
+            end
+        end)
+
+        if root and lockedGuis[root] then
+            -- Block Visible = false
+            if prop == "Visible" and value == false then return end
+
+            -- Block Enabled = false on ScreenGui
+            if prop == "Enabled" and value == false then return end
+
+            -- Block off-screen Position
+            if prop == "Position" and typeof(value) == "UDim2" then
+                local xOff = math.abs(value.X.Scale) >= 1.5 or math.abs(value.X.Offset) >= 3000
+                local yOff = math.abs(value.Y.Scale) >= 1.5 or math.abs(value.Y.Offset) >= 3000
+                if xOff or yOff then return end
+            end
+
+            -- Block UIScale being set tiny
+            if prop == "Scale" and typeof(value) == "number" and value < 0.05 then return end
+
+            -- Block size being zeroed out
+            if prop == "Size" and typeof(value) == "UDim2" then
+                if value.X.Scale < 0.01 and value.X.Offset < 2
+                and value.Y.Scale < 0.01 and value.Y.Offset < 2 then return end
+            end
+        end
+    end)
+
+    return oldIndex(self, prop, value)
+end)
+setreadonly(mt, true)
+
+--==================================================
+-- HELPERS
+--==================================================
+local function isOffScreen(pos)
+    local xOff = math.abs(pos.X.Scale) >= 1.5 or math.abs(pos.X.Offset) >= 3000
+    local yOff = math.abs(pos.Y.Scale) >= 1.5 or math.abs(pos.Y.Offset) >= 3000
+    return xOff or yOff
+end
+
+local function isTinySize(size, absSize)
+    if size.X.Scale < 0.01 and size.X.Offset < 2
+    and size.Y.Scale < 0.01 and size.Y.Offset < 2 then return true end
+    if absSize and absSize.X < 2 and absSize.Y < 2 then return true end
+    return false
+end
+
+--==================================================
+-- REVEAL
+-- Only touches: Visible, Enabled, Position (root frames only),
+--               UIScale, and zero Size
+-- Never touches: transparency, colors, ZIndex, anything styling
+--==================================================
+local function revealObj(obj, isRootFrame)
+    pcall(function()
+        if obj:IsA("ScreenGui") then
+            rawset(obj, "Enabled", true) -- bypass __newindex
+            -- cant rawset Roblox instances, use protected call below
+        end
+    end)
     pcall(function()
         if obj:IsA("ScreenGui") then
             obj.Enabled = true
         elseif obj:IsA("GuiObject") then
             obj.Visible = true
+
+            if isRootFrame and isOffScreen(obj.Position) then
+                if not originalPositions[obj] then
+                    originalPositions[obj] = obj.Position
+                end
+                obj.Position = UDim2.new(0.5, 0, 0.5, 0)
+                obj.AnchorPoint = Vector2.new(0.5, 0.5)
+            end
+
+            if isRootFrame and isTinySize(obj.Size, obj.AbsoluteSize) then
+                if not originalPositions[obj.."s"] then
+                    originalPositions[obj.."s"] = obj.Size
+                end
+                obj.Size = UDim2.new(0.8, 0, 0.8, 0)
+            end
+        end
+
+        if obj:IsA("UIScale") and obj.Scale < 0.05 then
+            obj.Scale = 1
         end
     end)
 end
 
-local function deepGentleReveal(root)
-    gentleReveal(root)
-    for _, desc in ipairs(root:GetDescendants()) do
-        gentleReveal(desc)
-    end
-end
-
--- Name matching helpers
-local function getWords(name)
-    local words = {}
-    for w in name:gmatch("[A-Z][a-z]*") do
-        if #w >= 3 then table.insert(words, w:lower()) end
-    end
-    for w in name:gmatch("[a-zA-Z]+") do
-        if #w >= 3 then table.insert(words, w:lower()) end
-    end
-    return words
-end
-
-local function anyWordMatch(targetName, uiName)
-    local t = targetName:lower()
-    for _, word in ipairs(getWords(uiName)) do
-        if t:find(word, 1, true) then return true end
-    end
-    return false
-end
-
-local function matches(obj, uiName)
-    if anyWordMatch(obj.Name, uiName) then return true end
-    if obj.Parent and anyWordMatch(obj.Parent.Name, uiName) then return true end
-    return false
-end
-
-local REMOTE_ARG_SETS = {
-    {}, {true}, {false},
-    {"open"}, {"Open"}, {"show"}, {"Show"},
-    {"toggle"}, {"Toggle"},
-    {1}, {0},
-    {player},
-    {true, player}, {player, true},
-    {"open", player}, {player, "open"},
-}
-
-local function spamRemote(remote, times)
-    times = times or 3
-    for _ = 1, times do
-        for _, args in ipairs(REMOTE_ARG_SETS) do
-            pcall(function()
-                if remote:IsA("RemoteEvent") then
-                    remote:FireServer(table.unpack(args))
-                elseif remote:IsA("RemoteFunction") then
-                    remote:InvokeServer(table.unpack(args))
-                end
-            end)
-            task.wait(0.03)
-        end
-        task.wait(0.1)
-    end
-end
-
-local function triggerInteractions(uiName)
-    local fired = {}
-    local roots = {ReplicatedStorage, Workspace, PlayerGui}
-    pcall(function() table.insert(roots, player:WaitForChild("PlayerScripts", 1)) end)
-    pcall(function() table.insert(roots, game:GetService("ReplicatedFirst")) end)
-
-    local searched = {}
-    for _, root in ipairs(roots) do
-        if root and not searched[root] then
-            searched[root] = true
-            pcall(function()
-                for _, obj in ipairs(root:GetDescendants()) do
-                    if not matches(obj, uiName) then continue end
-                    if obj:IsA("ClickDetector") then
-                        pcall(function() obj.MaxActivationDistance = math.huge end)
-                        pcall(function() fireclickdetector(obj) end)
-                        table.insert(fired, "ClickDetector: " .. obj:GetFullName())
-                    elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                        task.spawn(function() spamRemote(obj, 3) end)
-                        table.insert(fired, obj.ClassName .. ": " .. obj:GetFullName())
-                    elseif obj:IsA("BindableEvent") then
-                        pcall(function() obj:Fire() end)
-                        pcall(function() obj:Fire(true) end)
-                        pcall(function() obj:Fire("open") end)
-                        table.insert(fired, "BindableEvent: " .. obj:GetFullName())
-                    elseif obj:IsA("BindableFunction") then
-                        pcall(function() obj:Invoke() end)
-                        pcall(function() obj:Invoke(true) end)
-                        table.insert(fired, "BindableFunction: " .. obj:GetFullName())
-                    end
-                end
-            end)
+local function deepReveal(root)
+    revealObj(root, false)
+    for _, child in ipairs(root:GetChildren()) do
+        revealObj(child, true)
+        for _, desc in ipairs(child:GetDescendants()) do
+            revealObj(desc, false)
         end
     end
+end
 
-    local guiObj = PlayerGui:FindFirstChild(uiName)
-    if guiObj then
-        for _, obj in ipairs(guiObj:GetDescendants()) do
-            if obj:IsA("TextButton") or obj:IsA("ImageButton") then
-                pcall(function() obj.MouseButton1Click:Fire() end)
+local function deepRestore(root)
+    for _, child in ipairs(root:GetChildren()) do
+        pcall(function()
+            if originalPositions[child] then
+                child.Position = originalPositions[child]
+                originalPositions[child] = nil
             end
-        end
-    end
-
-    if #fired > 0 then
-        print("[UIRevealer] Fired " .. #fired .. " interaction(s) for '" .. uiName .. "':")
-        for _, s in ipairs(fired) do print("  -> " .. s) end
-    else
-        print("[UIRevealer] Nothing matched for '" .. uiName .. "'")
+        end)
     end
 end
+
+--==================================================
+-- LOCK / UNLOCK
+--==================================================
+local descConns = {}
 
 local function lockGui(gui)
     lockedGuis[gui] = true
-    deepGentleReveal(gui)
-
-    -- Disable LocalScripts that might re-hide the GUI
-    for _, obj in ipairs(gui:GetDescendants()) do
-        if obj:IsA("LocalScript") then
-            pcall(function() obj.Disabled = true end)
-        end
-    end
+    deepReveal(gui)
 
     if descConns[gui] then descConns[gui]:Disconnect() end
     descConns[gui] = gui.DescendantAdded:Connect(function(desc)
         if lockedGuis[gui] then
-            task.defer(function() gentleReveal(desc) end)
+            task.defer(function() revealObj(desc, false) end)
         end
     end)
 end
@@ -161,49 +163,52 @@ end
 local function unlockGui(gui)
     lockedGuis[gui] = nil
     if descConns[gui] then descConns[gui]:Disconnect(); descConns[gui] = nil end
+    deepRestore(gui)
     pcall(function() gui.Enabled = false end)
 end
 
--- Panel
+--==================================================
+-- PANEL
+--==================================================
 local panel = Instance.new("ScreenGui")
-panel.Name = "UltimateUIRevealerPanel"
+panel.Name = "UIRevealerPanel"
 panel.ResetOnSpawn = false
 panel.DisplayOrder = 99999
 panel.Enabled = true
 panel.Parent = PlayerGui
 
 local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 300, 0, 400)
-main.Position = UDim2.new(1, -310, 0, 60)
-main.BackgroundColor3 = Color3.fromRGB(25,25,30)
+main.Size = UDim2.new(0, 280, 0, 380)
+main.Position = UDim2.new(1, -290, 0, 60)
+main.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
 main.BorderSizePixel = 0
 main.Parent = panel
-Instance.new("UICorner", main).CornerRadius = UDim.new(0,12)
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1,0,0,40)
+title.Size = UDim2.new(1, 0, 0, 38)
 title.BackgroundTransparency = 1
-title.Text = "Ultimate UI Revealer"
-title.TextColor3 = Color3.new(1,1,1)
+title.Text = "UI Revealer"
+title.TextColor3 = Color3.new(1, 1, 1)
 title.TextScaled = true
 title.Font = Enum.Font.GothamBold
 title.Parent = main
 
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1,-10,1,-50)
-scroll.Position = UDim2.new(0,5,0,45)
-scroll.CanvasSize = UDim2.new(0,0,0,0)
-scroll.ScrollBarThickness = 6
+scroll.Size = UDim2.new(1, -10, 1, -48)
+scroll.Position = UDim2.new(0, 5, 0, 43)
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.ScrollBarThickness = 5
 scroll.BackgroundTransparency = 1
 scroll.BorderSizePixel = 0
 scroll.Parent = main
 
 local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0,5)
+layout.Padding = UDim.new(0, 4)
 layout.Parent = scroll
 
 layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 5)
+    scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 5)
 end)
 
 local toggled = {}
@@ -213,34 +218,27 @@ local function createButton(gui)
     if createdButtons[gui] then return end
     createdButtons[gui] = true
 
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1,0,0,35)
-    button.BackgroundColor3 = Color3.fromRGB(50,50,65)
-    button.TextColor3 = Color3.new(1,1,1)
-    button.TextScaled = true
-    button.Font = Enum.Font.Gotham
-    button.BorderSizePixel = 0
-    button.Parent = scroll
-    Instance.new("UICorner", button).CornerRadius = UDim.new(0,8)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 34)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.TextScaled = true
+    btn.Font = Enum.Font.Gotham
+    btn.BorderSizePixel = 0
+    btn.Text = gui.Name .. " [OFF]"
+    btn.Parent = scroll
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 7)
 
     local function update()
         local on = toggled[gui]
-        button.BackgroundColor3 = on and Color3.fromRGB(40,100,40) or Color3.fromRGB(50,50,65)
-        button.Text = gui.Name .. (on and " [REVEALED]" or " [OFF]")
+        btn.BackgroundColor3 = on and Color3.fromRGB(35, 110, 35) or Color3.fromRGB(45, 45, 60)
+        btn.Text = gui.Name .. (on and " [ON]" or " [OFF]")
     end
 
-    button.MouseButton1Click:Connect(function()
+    btn.MouseButton1Click:Connect(function()
         if not toggled[gui] then
             toggled[gui] = true
             lockGui(gui)
-            triggerInteractions(gui.Name)
-            -- Re-reveal a few times to catch delayed show/hide logic
-            task.spawn(function()
-                for _ = 1, 10 do
-                    task.wait(0.3)
-                    if toggled[gui] then deepGentleReveal(gui) end
-                end
-            end)
         else
             toggled[gui] = false
             unlockGui(gui)
@@ -263,19 +261,23 @@ populate()
 
 PlayerGui.ChildAdded:Connect(function(child)
     if child:IsA("ScreenGui") and child ~= panel then
-        task.wait(); createButton(child)
+        task.wait()
+        createButton(child)
     end
 end)
 
--- Heartbeat: gentle only, and throttled to every 0.1s instead of every frame
-local hbTimer = 0
+--==================================================
+-- HEARTBEAT — only needed as fallback for tweens
+-- that finish AFTER the hook was set
+--==================================================
+local timer = 0
 RunService.Heartbeat:Connect(function(dt)
-    hbTimer += dt
-    if hbTimer < 0.1 then return end
-    hbTimer = 0
-    for gui, isOn in pairs(toggled) do
-        if isOn and gui and gui.Parent then
-            deepGentleReveal(gui)
+    timer += dt
+    if timer < 0.2 then return end
+    timer = 0
+    for gui, on in pairs(toggled) do
+        if on and gui and gui.Parent then
+            deepReveal(gui)
         end
     end
 end)
@@ -287,4 +289,4 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("🟢 Ultimate UI Revealer — Gentle Edition loaded.")
+print("UI Revealer — Hook Edition loaded.")
