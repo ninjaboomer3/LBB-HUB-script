@@ -78,25 +78,7 @@ local function deepReveal(root)
     for _, desc in ipairs(root:GetDescendants()) do
         forceReveal(desc)
     end
-    -- Only fix position on direct children of the ScreenGui (the top-level window frame)
-    -- This moves the whole UI onto screen without breaking internal child layouts
-    if root:IsA("ScreenGui") then
-        for _, child in ipairs(root:GetChildren()) do
-            if child:IsA("GuiObject") then
-                pcall(function()
-                    local px = child.Position.X.Scale
-                    local py = child.Position.Y.Scale
-                    local ox = child.Position.X.Offset
-                    local oy = child.Position.Y.Offset
-                    -- If clearly off screen, center it
-                    if px < -0.5 or px > 1.5 or py < -0.5 or py > 1.5
-                        or ox < -500 or ox > 3000 or oy < -500 or oy > 3000 then
-                        child.Position = UDim2.new(0.5, -child.AbsoluteSize.X/2, 0.5, -child.AbsoluteSize.Y/2)
-                    end
-                end)
-            end
-        end
-    end
+
 end
 
 --==================================================
