@@ -65,14 +65,7 @@ local function forceReveal(obj)
                 obj.Size = UDim2.new(1, 0, 1, 0)
             end
 
-            -- 4. Fix off-screen position
-            local px = obj.Position.X.Scale
-            local py = obj.Position.Y.Scale
-            if px < -1 or px > 2 or py < -1 or py > 2 then
-                obj.Position = UDim2.new(0, 0, 0, 0)
-            end
-
-            -- 5. Remove clipping that hides children
+            -- 4. Remove clipping that hides children
             if obj:IsA("Frame") or obj:IsA("ScrollingFrame") then
                 pcall(function() obj.ClipsDescendants = false end)
             end
