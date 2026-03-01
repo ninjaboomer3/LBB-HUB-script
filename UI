@@ -22,7 +22,7 @@ for _, coreGuiType in ipairs(Enum.CoreGuiType:GetEnumItems()) do
 end
 
 --==================================================
--- FORCE ENABLE A SINGLE PROXIMITY PROMPT
+-- FORCE ENABLE PROXIMITY PROMPTS
 --==================================================
 local function forceEnablePrompt(pp)
     pcall(function()
@@ -32,9 +32,6 @@ local function forceEnablePrompt(pp)
     end)
 end
 
---==================================================
--- REVEAL ALL PROXIMITY PROMPTS ON LOAD
---==================================================
 local function revealAllPrompts()
     local count = 0
     for _, obj in ipairs(Workspace:GetDescendants()) do
@@ -43,39 +40,36 @@ local function revealAllPrompts()
             count = count + 1
         end
     end
-    print("[UIRevealer] Force-enabled " .. count .. " ProximityPrompt(s) on load.")
+    print("[UIRevealer] Force-enabled " .. count .. " ProximityPrompt(s).")
 end
 
 revealAllPrompts()
 
--- Watch for any new ProximityPrompts added later and force-enable them too
 Workspace.DescendantAdded:Connect(function(obj)
-    if obj:IsA("ProximityPrompt") then
-        forceEnablePrompt(obj)
-    end
-end)
-
--- Also re-enforce every heartbeat in case the game resets them
-RunService.Heartbeat:Connect(function()
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and (not obj.Enabled or obj.MaxActivationDistance < 9999) then
-            forceEnablePrompt(obj)
-        end
-    end
+    if obj:IsA("ProximityPrompt") then forceEnablePrompt(obj) end
 end)
 
 --==================================================
--- FORCE REVEAL FUNCTIONS (same as reference)
+-- MAX FORCE REVEAL
+-- Sets every possible visibility-related property
 --==================================================
 local function forceReveal(obj)
-    if not obj:IsA("GuiObject") then return end
     pcall(function()
         if obj:IsA("ScreenGui") then
             obj.Enabled = true
             obj.DisplayOrder = math.huge
-        else
+        elseif obj:IsA("GuiObject") then
             obj.Visible = true
             obj.ZIndex = math.huge
+            -- also kill any transparency that might hide it
+            if obj:IsA("Frame") or obj:IsA("ScrollingFrame") or obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+                obj.BackgroundTransparency = 0
+                obj.ImageTransparency = 0
+            end
+            if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+                obj.BackgroundTransparency = 0
+                obj.TextTransparency = 0
+            end
         end
     end)
 end
@@ -88,7 +82,7 @@ local function deepReveal(obj)
 end
 
 --==================================================
--- NAME MATCHING
+-- NAME MATCHING (any word match, lenient)
 --==================================================
 local function getWords(name)
     local words = {}
@@ -110,15 +104,14 @@ local function anyWordMatch(targetName, uiName)
 end
 
 local function matches(obj, uiName)
-    local n = obj.Name
-    local p = (obj.Parent and obj.Parent.Name) or ""
-    if anyWordMatch(n, uiName) or anyWordMatch(p, uiName) then return true end
+    if anyWordMatch(obj.Name, uiName) then return true end
+    if obj.Parent and anyWordMatch(obj.Parent.Name, uiName) then return true end
     if obj:IsA("ProximityPrompt") and anyWordMatch(obj.ActionText or "", uiName) then return true end
     return false
 end
 
 --==================================================
--- COMMON ARGUMENT SETS TO TRY ON REMOTES
+-- ARG SETS
 --==================================================
 local REMOTE_ARG_SETS = {
     {},
@@ -131,59 +124,40 @@ local REMOTE_ARG_SETS = {
     {"toggle"},
     {"Toggle"},
     {1},
+    {0},
     {player},
     {true, player},
     {player, true},
+    {"open", player},
+    {player, "open"},
 }
 
-local function fireRemoteWithArgs(remote)
-    for _, args in ipairs(REMOTE_ARG_SETS) do
-        pcall(function()
-            if remote:IsA("RemoteEvent") then
-                remote:FireServer(table.unpack(args))
-            elseif remote:IsA("RemoteFunction") then
-                remote:InvokeServer(table.unpack(args))
-            end
-        end)
-        task.wait(0.05)
+--==================================================
+-- FIRE A REMOTE WITH ALL ARG SETS, N TIMES
+--==================================================
+local function spamRemote(remote, times)
+    times = times or 3
+    for _ = 1, times do
+        for _, args in ipairs(REMOTE_ARG_SETS) do
+            pcall(function()
+                if remote:IsA("RemoteEvent") then
+                    remote:FireServer(table.unpack(args))
+                elseif remote:IsA("RemoteFunction") then
+                    remote:InvokeServer(table.unpack(args))
+                end
+            end)
+            task.wait(0.03)
+        end
+        task.wait(0.1)
     end
 end
 
 --==================================================
 -- TRIGGER ALL MATCHING INTERACTIONS
+-- Fires everything with any word match, multiple times
 --==================================================
 local function triggerInteractions(uiName)
     local fired = {}
-
-    local function checkAndFire(obj)
-        if not matches(obj, uiName) then return end
-
-        if obj:IsA("ProximityPrompt") then
-            forceEnablePrompt(obj)
-            pcall(function() fireproximityprompt(obj) end)
-            table.insert(fired, "ProximityPrompt: " .. obj:GetFullName())
-
-        elseif obj:IsA("ClickDetector") then
-            pcall(function() obj.MaxActivationDistance = math.huge end)
-            pcall(function() fireclickdetector(obj) end)
-            table.insert(fired, "ClickDetector: " .. obj:GetFullName())
-
-        elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            task.spawn(function() fireRemoteWithArgs(obj) end)
-            table.insert(fired, obj.ClassName .. ": " .. obj:GetFullName())
-
-        elseif obj:IsA("BindableEvent") then
-            pcall(function() obj:Fire() end)
-            pcall(function() obj:Fire(true) end)
-            pcall(function() obj:Fire("open") end)
-            table.insert(fired, "BindableEvent: " .. obj:GetFullName())
-
-        elseif obj:IsA("BindableFunction") then
-            pcall(function() obj:Invoke() end)
-            pcall(function() obj:Invoke(true) end)
-            table.insert(fired, "BindableFunction: " .. obj:GetFullName())
-        end
-    end
 
     local roots = {ReplicatedStorage, Workspace, PlayerGui}
     pcall(function() table.insert(roots, player:WaitForChild("PlayerScripts", 1)) end)
@@ -195,12 +169,40 @@ local function triggerInteractions(uiName)
             searched[root] = true
             pcall(function()
                 for _, obj in ipairs(root:GetDescendants()) do
-                    checkAndFire(obj)
+                    if not matches(obj, uiName) then continue end
+
+                    if obj:IsA("ProximityPrompt") then
+                        forceEnablePrompt(obj)
+                        pcall(function() fireproximityprompt(obj) end)
+                        table.insert(fired, "ProximityPrompt: " .. obj:GetFullName())
+
+                    elseif obj:IsA("ClickDetector") then
+                        pcall(function() obj.MaxActivationDistance = math.huge end)
+                        pcall(function() fireclickdetector(obj) end)
+                        table.insert(fired, "ClickDetector: " .. obj:GetFullName())
+
+                    elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                        -- spam fire in background
+                        task.spawn(function() spamRemote(obj, 3) end)
+                        table.insert(fired, obj.ClassName .. ": " .. obj:GetFullName())
+
+                    elseif obj:IsA("BindableEvent") then
+                        pcall(function() obj:Fire() end)
+                        pcall(function() obj:Fire(true) end)
+                        pcall(function() obj:Fire("open") end)
+                        table.insert(fired, "BindableEvent: " .. obj:GetFullName())
+
+                    elseif obj:IsA("BindableFunction") then
+                        pcall(function() obj:Invoke() end)
+                        pcall(function() obj:Invoke(true) end)
+                        table.insert(fired, "BindableFunction: " .. obj:GetFullName())
+                    end
                 end
             end)
         end
     end
 
+    -- Fire buttons inside the GUI
     local guiObj = PlayerGui:FindFirstChild(uiName)
     if guiObj then
         for _, obj in ipairs(guiObj:GetDescendants()) do
@@ -283,11 +285,16 @@ local function createButton(gui)
 
     button.MouseButton1Click:Connect(function()
         if not toggled[gui] then
+            -- Fire interactions immediately
             triggerInteractions(gui.Name)
-            task.delay(0.3, function()
-                deepReveal(gui)
-            end)
+            -- Then keep spamming deepReveal as the UI populates
             toggled[gui] = true
+            task.spawn(function()
+                for i = 1, 10 do
+                    task.wait(0.2)
+                    deepReveal(gui)
+                end
+            end)
         else
             gui.Enabled = false
             toggled[gui] = false
@@ -315,12 +322,17 @@ PlayerGui.ChildAdded:Connect(function(child)
 end)
 
 --==================================================
--- CONTINUOUS ENFORCEMENT FOR TOGGLED GUIS
+-- HEARTBEAT: enforce toggled GUIs + prompts
 --==================================================
 RunService.Heartbeat:Connect(function()
     for gui, isOn in pairs(toggled) do
         if isOn then
             deepReveal(gui)
+        end
+    end
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and (not obj.Enabled or obj.MaxActivationDistance < 9999) then
+            forceEnablePrompt(obj)
         end
     end
 end)
