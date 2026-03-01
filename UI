@@ -45,7 +45,7 @@ local function deepReveal(obj)
 end
 
 --==================================================
--- TOKENIZE UI NAME INTO WORDS
+-- NAME MATCHING
 --==================================================
 local function getWords(name)
     local words = {}
@@ -58,48 +58,54 @@ local function getWords(name)
     return words
 end
 
-local function anyWordMatch(targetName, uiWords)
+-- Takes two strings, checks if any word from uiName appears in targetName
+local function anyWordMatch(targetName, uiName)
     local t = targetName:lower()
-    for _, word in ipairs(uiWords) do
+    for _, word in ipairs(getWords(uiName)) do
         if t:find(word, 1, true) then return true end
     end
     return false
 end
 
+local function matches(obj, uiName)
+    local n = obj.Name
+    local p = (obj.Parent and obj.Parent.Name) or ""
+    if anyWordMatch(n, uiName) or anyWordMatch(p, uiName) then return true end
+    if obj:IsA("ProximityPrompt") and anyWordMatch(obj.ActionText or "", uiName) then return true end
+    return false
+end
+
+--==================================================
+-- FORCE ENABLE INTERACTION BEFORE FIRING
+--==================================================
+local function forceEnableInteraction(obj)
+    pcall(function()
+        if obj:IsA("ProximityPrompt") then
+            obj.Enabled = true
+            obj.MaxActivationDistance = math.huge
+            obj.RequiresLineOfSight = false
+        elseif obj:IsA("ClickDetector") then
+            obj.MaxActivationDistance = math.huge
+        end
+    end)
+end
+
 --==================================================
 -- TRIGGER ALL MATCHING INTERACTIONS
--- Force-enables disabled/hidden ones before firing
 --==================================================
 local function triggerInteractions(uiName)
     local fired = {}
-    local uiWords = getWords(uiName)
-
-    local function matches(obj)
-        local n = obj.Name
-        local p = (obj.Parent and obj.Parent.Name) or ""
-        if anyWordMatch(n, uiWords) or anyWordMatch(p, uiWords) then return true end
-        if obj:IsA("ProximityPrompt") and anyWordMatch(obj.ActionText or "", uiWords) then return true end
-        return false
-    end
 
     local function checkAndFire(obj)
-        if not matches(obj) then return end
+        if not matches(obj, uiName) then return end
 
         if obj:IsA("ProximityPrompt") then
-            -- Force enable regardless of distance or enabled state
-            pcall(function()
-                obj.Enabled = true
-                obj.MaxActivationDistance = math.huge
-                obj.RequiresLineOfSight = false
-            end)
+            forceEnableInteraction(obj)
             pcall(function() fireproximityprompt(obj) end)
             table.insert(fired, "ProximityPrompt: " .. obj:GetFullName())
 
         elseif obj:IsA("ClickDetector") then
-            -- Force max distance
-            pcall(function()
-                obj.MaxActivationDistance = math.huge
-            end)
+            forceEnableInteraction(obj)
             pcall(function() fireclickdetector(obj) end)
             table.insert(fired, "ClickDetector: " .. obj:GetFullName())
 
@@ -121,7 +127,6 @@ local function triggerInteractions(uiName)
         end
     end
 
-    -- Search roots
     local roots = {ReplicatedStorage, Workspace, PlayerGui}
     pcall(function() table.insert(roots, player:WaitForChild("PlayerScripts", 1)) end)
     pcall(function() table.insert(roots, game:GetService("ReplicatedFirst")) end)
@@ -152,7 +157,7 @@ local function triggerInteractions(uiName)
         print("[UIRevealer] Fired " .. #fired .. " interaction(s) for '" .. uiName .. "':")
         for _, s in ipairs(fired) do print("  -> " .. s) end
     else
-        print("[UIRevealer] Nothing found for '" .. uiName .. "'")
+        print("[UIRevealer] Nothing matched for '" .. uiName .. "'")
     end
 end
 
