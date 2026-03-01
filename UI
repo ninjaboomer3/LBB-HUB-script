@@ -45,110 +45,100 @@ local function deepReveal(obj)
 end
 
 --==================================================
--- STRICT NAME MATCH
+-- TOKENIZE UI NAME INTO WORDS
 --==================================================
-local function strictMatch(a, b)
-    a = a:lower()
-    b = b:lower()
-    if a:find(b, 1, true) or b:find(a, 1, true) then return true end
-    local wordCount, matchCount = 0, 0
-    for word in b:gmatch("[A-Za-z][a-z]+") do
-        if #word >= 4 then
-            wordCount = wordCount + 1
-            if a:find(word:lower(), 1, true) then
-                matchCount = matchCount + 1
-            end
-        end
+local function getWords(name)
+    local words = {}
+    for w in name:gmatch("[A-Z][a-z]*") do
+        if #w >= 3 then table.insert(words, w:lower()) end
     end
-    return wordCount > 0 and matchCount == wordCount
+    for w in name:gmatch("[a-zA-Z]+") do
+        if #w >= 3 then table.insert(words, w:lower()) end
+    end
+    return words
 end
 
---==================================================
--- ALL SERVICES TO SEARCH FOR EVENTS/PROMPTS
---==================================================
-local searchRoots = {
-    ReplicatedStorage,
-    Workspace,
-    player:WaitForChild("PlayerGui"),
-    player:WaitForChild("PlayerScripts"),
-    Players.LocalPlayer.Character or Workspace, -- character too
-}
--- safely add more services
-for _, svcName in ipairs({"ReplicatedFirst", "StarterGui", "StarterPlayerScripts"}) do
-    pcall(function()
-        table.insert(searchRoots, game:GetService(svcName))
-    end)
+local function anyWordMatch(targetName, uiWords)
+    local t = targetName:lower()
+    for _, word in ipairs(uiWords) do
+        if t:find(word, 1, true) then return true end
+    end
+    return false
 end
 
 --==================================================
 -- TRIGGER ALL MATCHING INTERACTIONS
+-- Force-enables disabled/hidden ones before firing
 --==================================================
 local function triggerInteractions(uiName)
     local fired = {}
+    local uiWords = getWords(uiName)
 
-    local function tryFire(obj)
-        local name = obj.Name
-        local parentName = obj.Parent and obj.Parent.Name or ""
+    local function matches(obj)
+        local n = obj.Name
+        local p = (obj.Parent and obj.Parent.Name) or ""
+        if anyWordMatch(n, uiWords) or anyWordMatch(p, uiWords) then return true end
+        if obj:IsA("ProximityPrompt") and anyWordMatch(obj.ActionText or "", uiWords) then return true end
+        return false
+    end
 
-        -- ProximityPrompt — fireproximityprompt bypasses distance
+    local function checkAndFire(obj)
+        if not matches(obj) then return end
+
         if obj:IsA("ProximityPrompt") then
-            if strictMatch(name, uiName) or strictMatch(parentName, uiName)
-                or strictMatch(obj.ActionText or "", uiName) then
-                pcall(function() fireproximityprompt(obj) end)
-                table.insert(fired, "ProximityPrompt: " .. obj:GetFullName())
-            end
+            -- Force enable regardless of distance or enabled state
+            pcall(function()
+                obj.Enabled = true
+                obj.MaxActivationDistance = math.huge
+                obj.RequiresLineOfSight = false
+            end)
+            pcall(function() fireproximityprompt(obj) end)
+            table.insert(fired, "ProximityPrompt: " .. obj:GetFullName())
 
-        -- ClickDetector
         elseif obj:IsA("ClickDetector") then
-            if strictMatch(name, uiName) or strictMatch(parentName, uiName) then
-                pcall(function() fireclickdetector(obj) end)
-                table.insert(fired, "ClickDetector: " .. obj:GetFullName())
-            end
+            -- Force max distance
+            pcall(function()
+                obj.MaxActivationDistance = math.huge
+            end)
+            pcall(function() fireclickdetector(obj) end)
+            table.insert(fired, "ClickDetector: " .. obj:GetFullName())
 
-        -- RemoteEvent — strict match only to avoid kicks
         elseif obj:IsA("RemoteEvent") then
-            if strictMatch(name, uiName) then
-                pcall(function() obj:FireServer() end)
-                table.insert(fired, "RemoteEvent: " .. obj:GetFullName())
-            end
+            pcall(function() obj:FireServer() end)
+            table.insert(fired, "RemoteEvent: " .. obj:GetFullName())
 
-        -- RemoteFunction — strict match only
         elseif obj:IsA("RemoteFunction") then
-            if strictMatch(name, uiName) then
-                pcall(function() obj:InvokeServer() end)
-                table.insert(fired, "RemoteFunction: " .. obj:GetFullName())
-            end
+            pcall(function() obj:InvokeServer() end)
+            table.insert(fired, "RemoteFunction: " .. obj:GetFullName())
 
-        -- BindableEvent — local only, completely safe
         elseif obj:IsA("BindableEvent") then
-            if strictMatch(name, uiName) or strictMatch(parentName, uiName) then
-                pcall(function() obj:Fire() end)
-                table.insert(fired, "BindableEvent: " .. obj:GetFullName())
-            end
+            pcall(function() obj:Fire() end)
+            table.insert(fired, "BindableEvent: " .. obj:GetFullName())
 
-        -- BindableFunction — local only, completely safe
         elseif obj:IsA("BindableFunction") then
-            if strictMatch(name, uiName) or strictMatch(parentName, uiName) then
-                pcall(function() obj:Invoke() end)
-                table.insert(fired, "BindableFunction: " .. obj:GetFullName())
-            end
+            pcall(function() obj:Invoke() end)
+            table.insert(fired, "BindableFunction: " .. obj:GetFullName())
         end
     end
 
-    -- Search all roots
+    -- Search roots
+    local roots = {ReplicatedStorage, Workspace, PlayerGui}
+    pcall(function() table.insert(roots, player:WaitForChild("PlayerScripts", 1)) end)
+    pcall(function() table.insert(roots, game:GetService("ReplicatedFirst")) end)
+
     local searched = {}
-    for _, root in ipairs(searchRoots) do
+    for _, root in ipairs(roots) do
         if root and not searched[root] then
             searched[root] = true
             pcall(function()
                 for _, obj in ipairs(root:GetDescendants()) do
-                    tryFire(obj)
+                    checkAndFire(obj)
                 end
             end)
         end
     end
 
-    -- Also fire buttons inside the GUI itself
+    -- Fire buttons inside the GUI itself
     local guiObj = PlayerGui:FindFirstChild(uiName)
     if guiObj then
         for _, obj in ipairs(guiObj:GetDescendants()) do
@@ -159,10 +149,10 @@ local function triggerInteractions(uiName)
     end
 
     if #fired > 0 then
-        print("[UIRevealer] Triggered " .. #fired .. " interaction(s) for '" .. uiName .. "':")
+        print("[UIRevealer] Fired " .. #fired .. " interaction(s) for '" .. uiName .. "':")
         for _, s in ipairs(fired) do print("  -> " .. s) end
     else
-        print("[UIRevealer] No matching interactions found for '" .. uiName .. "'")
+        print("[UIRevealer] Nothing found for '" .. uiName .. "'")
     end
 end
 
@@ -232,7 +222,7 @@ local function createButton(gui)
     button.MouseButton1Click:Connect(function()
         if not toggled[gui] then
             triggerInteractions(gui.Name)
-            task.delay(0.25, function()
+            task.delay(0.3, function()
                 deepReveal(gui)
             end)
             toggled[gui] = true
