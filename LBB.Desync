@@ -1,6 +1,6 @@
--- LBB DESYNC — GALAXY EDITION
--- GUI is built first. RakNet detection runs after in a protected spawn.
+-- LBB DESYNC — GALAXY EDITION (Interaction Fix)
 -- Workflow: H = freeze server pos | T = snap server to real pos | H = unfreeze & steal
+-- Fix: pulses a brief resync every 2s so interactions register server-side
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -8,12 +8,10 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
--- wait for PlayerGui safely
 local pg
 local ok = pcall(function() pg = player:WaitForChild("PlayerGui", 10) end)
 if not ok or not pg then return end
 
--- remove old
 local old = pg:FindFirstChild("LBBDesync")
 if old then old:Destroy() end
 
@@ -22,6 +20,13 @@ local desynced = false
 local listening = nil
 local keybinds = { toggle = Enum.KeyCode.H, teleport = Enum.KeyCode.T, panel = Enum.KeyCode.U }
 local _pause, _resume, supported = nil, nil, false
+
+-- Interaction pulse state
+local pulseEnabled = true       -- togglable from UI
+local PULSE_INTERVAL = 2        -- seconds between pulses
+local PULSE_DURATION = 0.08     -- how long to resync for (short enough server doesn't move you)
+local pulseTimer = 0
+local pulsing = false           -- true while mid-pulse so we don't stack
 
 --// GUI
 local gui = Instance.new("ScreenGui")
@@ -32,8 +37,8 @@ gui.IgnoreGuiInset = true
 gui.Parent = pg
 
 local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 260, 0, 300)
-main.Position = UDim2.new(0.5, -130, 0.5, -150)
+main.Size = UDim2.new(0, 260, 0, 340) -- slightly taller for pulse row
+main.Position = UDim2.new(0.5, -130, 0.5, -170)
 main.BackgroundColor3 = Color3.fromRGB(6, 4, 20)
 main.BorderSizePixel = 0
 main.Parent = gui
@@ -193,11 +198,74 @@ local function mkBtn(txt, col, sc, y)
     return bg, btn, sk
 end
 
-local togBg, togBtn, togSk = mkBtn("ACTIVATE DESYNC", Color3.fromRGB(55,25,130), Color3.fromRGB(120,70,255), 96)
-local tpBg,  tpBtn,  tpSk  = mkBtn("⚡ TELEPORT  [T]",  Color3.fromRGB(10,45,80),  Color3.fromRGB(50,160,255), 150)
+local togBg, togBtn, togSk = mkBtn("ACTIVATE DESYNC",  Color3.fromRGB(55,25,130),  Color3.fromRGB(120,70,255),  96)
+local tpBg,  tpBtn,  tpSk  = mkBtn("⚡ TELEPORT  [T]", Color3.fromRGB(10,45,80),   Color3.fromRGB(50,160,255),  150)
 tpBtn.TextColor3 = Color3.fromRGB(100, 200, 255)
 
--- keybind rows
+--// PULSE TOGGLE ROW
+local pulseRow = Instance.new("Frame")
+pulseRow.Size = UDim2.new(0, 220, 0, 36)
+pulseRow.Position = UDim2.new(0.5, -110, 0, 204)
+pulseRow.BackgroundColor3 = Color3.fromRGB(10, 7, 28)
+pulseRow.BorderSizePixel = 0
+pulseRow.ZIndex = 20
+pulseRow.Parent = main
+Instance.new("UICorner", pulseRow).CornerRadius = UDim.new(0, 10)
+local prs = Instance.new("UIStroke", pulseRow)
+prs.Color = Color3.fromRGB(40,25,85); prs.Thickness = 1
+
+local pulseLabel = Instance.new("TextLabel")
+pulseLabel.Size = UDim2.new(0.62, 0, 1, 0)
+pulseLabel.Position = UDim2.new(0, 10, 0, 0)
+pulseLabel.BackgroundTransparency = 1
+pulseLabel.Text = "INTERACTION PULSE"
+pulseLabel.TextColor3 = Color3.fromRGB(140, 120, 200)
+pulseLabel.Font = Enum.Font.Gotham
+pulseLabel.TextScaled = true
+pulseLabel.TextXAlignment = Enum.TextXAlignment.Left
+pulseLabel.ZIndex = 21
+pulseLabel.Parent = pulseRow
+
+-- pulse indicator dot (flashes when pulse fires)
+local pulseDot = Instance.new("Frame")
+pulseDot.Size = UDim2.new(0, 8, 0, 8)
+pulseDot.Position = UDim2.new(0.62, 2, 0.5, -4)
+pulseDot.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+pulseDot.BackgroundTransparency = 0.4
+pulseDot.BorderSizePixel = 0
+pulseDot.ZIndex = 22
+pulseDot.Parent = pulseRow
+Instance.new("UICorner", pulseDot).CornerRadius = UDim.new(1, 0)
+
+local pulseToggleBtn = Instance.new("TextButton")
+pulseToggleBtn.Size = UDim2.new(0.28, 0, 0.6, 0)
+pulseToggleBtn.Position = UDim2.new(0.7, 0, 0.2, 0)
+pulseToggleBtn.BackgroundColor3 = Color3.fromRGB(32, 138, 58)
+pulseToggleBtn.TextColor3 = Color3.white
+pulseToggleBtn.Text = "ON"
+pulseToggleBtn.TextScaled = true
+pulseToggleBtn.Font = Enum.Font.GothamBold
+pulseToggleBtn.BorderSizePixel = 0
+pulseToggleBtn.ZIndex = 22
+pulseToggleBtn.Parent = pulseRow
+Instance.new("UICorner", pulseToggleBtn).CornerRadius = UDim.new(1, 0)
+
+pulseToggleBtn.MouseButton1Click:Connect(function()
+    pulseEnabled = not pulseEnabled
+    if pulseEnabled then
+        pulseToggleBtn.BackgroundColor3 = Color3.fromRGB(32, 138, 58)
+        pulseToggleBtn.Text = "ON"
+        pulseDot.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+        prs.Color = Color3.fromRGB(40,25,85)
+    else
+        pulseToggleBtn.BackgroundColor3 = Color3.fromRGB(100, 30, 30)
+        pulseToggleBtn.Text = "OFF"
+        pulseDot.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        prs.Color = Color3.fromRGB(80,25,25)
+    end
+end)
+
+-- keybind rows (shifted down by 40 to make room for pulse row)
 local keyRefs = {}
 local function mkRow(lbl, key, y)
     local row = Instance.new("Frame")
@@ -232,9 +300,9 @@ local function mkRow(lbl, key, y)
     keyRefs[key] = { badge = badge, stroke = bs }
 end
 
-mkRow("TOGGLE DESYNC", "toggle",   210)
-mkRow("TELEPORT",      "teleport", 248)
-mkRow("HIDE PANEL",    "panel",    286)
+mkRow("TOGGLE DESYNC", "toggle",   250)
+mkRow("TELEPORT",      "teleport", 288)
+mkRow("HIDE PANEL",    "panel",    326) -- adjusted Y positions
 
 -- credit
 local cr = Instance.new("TextLabel")
@@ -267,7 +335,7 @@ local function updateUI()
     end
 end
 
---// RAKNET DETECTION — fully protected, runs after UI is visible
+--// RAKNET DETECTION
 task.spawn(function()
     task.wait(0.2)
     pcall(function()
@@ -283,10 +351,9 @@ task.spawn(function()
                 if type(rn.desync) == "function" then
                     _pause  = function() rn.desync(true)  end
                     _resume = function()
-                        -- try bool false first, then toggle (no arg), then call twice
                         rn.desync(false)
                         task.wait()
-                        rn.desync()   -- some executors use toggle with no arg
+                        rn.desync()
                     end
                 elseif type(rn.desync) == "table" then
                     _pause  = rn.desync.pause  or rn.desync.enable
@@ -335,11 +402,39 @@ player.CharacterAdded:Connect(function()
     task.wait(0.1); updateUI()
 end)
 
-RunService.Heartbeat:Connect(function()
-    if not desynced then return end
-    local c = player.Character; if not c then return end
-    local h = c:FindFirstChildOfClass("Humanoid")
-    if h and h.Health <= 0 then resumeNet(); updateUI() end
+--// HEARTBEAT — desync guard + interaction pulse
+RunService.Heartbeat:Connect(function(dt)
+    -- death check
+    if desynced then
+        local c = player.Character
+        if c then
+            local h = c:FindFirstChildOfClass("Humanoid")
+            if h and h.Health <= 0 then resumeNet(); updateUI() end
+        end
+    end
+
+    -- interaction pulse: briefly resync every N seconds so server accepts interactions
+    if not desynced or not pulseEnabled or not supported or pulsing then return end
+
+    pulseTimer += dt
+    if pulseTimer < PULSE_INTERVAL then return end
+    pulseTimer = 0
+    pulsing = true
+
+    -- flash the dot to show pulse fired
+    pulseDot.BackgroundTransparency = 0
+    pulseDot.BackgroundColor3 = Color3.fromRGB(255, 220, 60)
+    TweenService:Create(pulseDot, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
+        BackgroundTransparency = 0.4,
+        BackgroundColor3 = Color3.fromRGB(80, 200, 120),
+    }):Play()
+
+    task.spawn(function()
+        pcall(_resume)           -- briefly resync
+        task.wait(PULSE_DURATION)
+        pcall(_pause)            -- re-desync immediately
+        pulsing = false
+    end)
 end)
 
 --// BUTTON BOUNCE
