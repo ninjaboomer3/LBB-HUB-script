@@ -1,0 +1,258 @@
+--==================================================
+-- LBB DESYNC
+-- RakNet desync with full UI + keybinds
+-- U = toggle panel | G (hold) = desync
+-- H = toggle desync | J = switch hold/toggle mode
+--==================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+--==================================================
+-- STATE
+--==================================================
+local desynced = false
+
+--==================================================
+-- RAKNET HELPERS
+--==================================================
+local function pauseNet()
+    if desynced then return end
+    desynced = true
+    pcall(function() raknetpause() end)
+    print("[LBB Desync] PAUSED")
+end
+
+local function resumeNet()
+    if not desynced then return end
+    desynced = false
+    pcall(function() raknetresume() end)
+    print("[LBB Desync] RESUMED")
+end
+
+-- Auto resume on respawn
+player.CharacterAdded:Connect(function(c)
+    character = c
+    hrp = c:WaitForChild("HumanoidRootPart")
+    pcall(function() raknetresume() end)
+    desynced = false
+    updateUI()
+end)
+
+--==================================================
+-- UI
+--==================================================
+local gui = Instance.new("ScreenGui")
+gui.Name = "LBBDesync"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 99999
+gui.Enabled = true
+gui.Parent = player:WaitForChild("PlayerGui")
+
+-- Main frame
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 280, 0, 320)
+main.Position = UDim2.new(0.5, -140, 0.5, -160)
+main.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+main.BorderSizePixel = 0
+main.Parent = gui
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 14)
+
+-- Drop shadow
+local shadow = Instance.new("ImageLabel")
+shadow.Size = UDim2.new(1, 30, 1, 30)
+shadow.Position = UDim2.new(0, -15, 0, -15)
+shadow.BackgroundTransparency = 1
+shadow.Image = "rbxassetid://5554236805"
+shadow.ImageColor3 = Color3.new(0, 0, 0)
+shadow.ImageTransparency = 0.5
+shadow.ScaleType = Enum.ScaleType.Slice
+shadow.SliceCenter = Rect.new(23, 23, 277, 277)
+shadow.ZIndex = 0
+shadow.Parent = main
+
+-- Header bar
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 50)
+header.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+header.BorderSizePixel = 0
+header.Parent = main
+Instance.new("UICorner", header).CornerRadius = UDim.new(0, 14)
+
+-- Fix header bottom corners
+local headerFix = Instance.new("Frame")
+headerFix.Size = UDim2.new(1, 0, 0, 14)
+headerFix.Position = UDim2.new(0, 0, 1, -14)
+headerFix.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+headerFix.BorderSizePixel = 0
+headerFix.Parent = header
+
+-- Title
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -20, 1, 0)
+title.Position = UDim2.new(0, 15, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "LBB Desync"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+-- Status indicator dot
+local dot = Instance.new("Frame")
+dot.Size = UDim2.new(0, 12, 0, 12)
+dot.Position = UDim2.new(1, -25, 0.5, -6)
+dot.BackgroundColor3 = Color3.fromRGB(80, 255, 80)
+dot.BorderSizePixel = 0
+dot.Parent = header
+Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
+-- Status label
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -20, 0, 30)
+statusLabel.Position = UDim2.new(0, 10, 0, 58)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Status: INACTIVE"
+statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+statusLabel.TextScaled = true
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = main
+
+
+
+-- Helper to make buttons
+local function makeButton(text, posY, color)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -20, 0, 44)
+    btn.Position = UDim2.new(0, 10, 0, posY)
+    btn.BackgroundColor3 = color or Color3.fromRGB(45, 45, 58)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Text = text
+    btn.TextScaled = true
+    btn.Font = Enum.Font.GothamBold
+    btn.BorderSizePixel = 0
+    btn.Parent = main
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+
+    -- Hover effect
+    btn.MouseEnter:Connect(function()
+        btn.BackgroundColor3 = Color3.fromRGB(
+            math.min(btn.BackgroundColor3.R * 255 + 20, 255),
+            math.min(btn.BackgroundColor3.G * 255 + 20, 255),
+            math.min(btn.BackgroundColor3.B * 255 + 20, 255)
+        )
+    end)
+    btn.MouseLeave:Connect(function()
+        btn.BackgroundColor3 = color or Color3.fromRGB(45, 45, 58)
+    end)
+
+    return btn
+end
+
+local toggleBtn = makeButton("⏸  Desync: OFF", 115, Color3.fromRGB(45, 45, 58))
+
+-- Keybind hint
+local hint = Instance.new("TextLabel")
+hint.Size = UDim2.new(1, -20, 0, 20)
+hint.Position = UDim2.new(0, 10, 1, -28)
+hint.BackgroundTransparency = 1
+hint.Text = "U = panel  |  H = toggle desync"
+hint.TextColor3 = Color3.fromRGB(80, 80, 100)
+hint.TextScaled = true
+hint.Font = Enum.Font.Gotham
+hint.Parent = main
+
+--==================================================
+-- UPDATE UI STATE
+--==================================================
+function updateUI()
+    if desynced then
+        statusLabel.Text = "Status: ACTIVE"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+        dot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+        toggleBtn.Text = "▶  Desync: ON"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    else
+        statusLabel.Text = "Status: INACTIVE"
+        statusLabel.TextColor3 = Color3.fromRGB(80, 255, 80)
+        dot.BackgroundColor3 = Color3.fromRGB(80, 255, 80)
+        toggleBtn.Text = "⏸  Desync: OFF"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 58)
+    end
+end
+
+updateUI()
+
+--==================================================
+-- BUTTON LOGIC
+--==================================================
+toggleBtn.MouseButton1Click:Connect(function()
+    if desynced then resumeNet() else pauseNet() end
+    updateUI()
+end)
+
+
+
+--==================================================
+-- DRAGGABLE PANEL
+--==================================================
+local dragging, dragStart, startPos
+header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = main.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        main.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+--==================================================
+-- KEYBINDS
+--==================================================
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+
+    if input.KeyCode == Enum.KeyCode.H then
+        if desynced then resumeNet() else pauseNet() end
+        updateUI()
+
+    elseif input.KeyCode == Enum.KeyCode.U then
+        gui.Enabled = not gui.Enabled
+    end
+end)
+
+--==================================================
+-- SAFETY: auto resume on death
+--==================================================
+RunService.Heartbeat:Connect(function()
+    if not desynced then return end
+    local char = player.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health <= 0 then
+        resumeNet()
+        updateUI()
+    end
+end)
+
+print("🟢 LBB Desync loaded. U = panel | H = toggle desync")
