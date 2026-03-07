@@ -1,106 +1,117 @@
---==================================================
 -- LBB DESYNC — GALAXY EDITION
---
--- HOW THIS WORKS:
--- Instead of pausing ALL packets (which blocks
--- interactions), we lock HRP.CFrame every Heartbeat
--- to a saved position. Server always sees you frozen
--- there, but all packets flow normally so stealing,
--- clicking, remotes all still work.
--- You walk freely on client, server sees you frozen.
---==================================================
+-- RakNet only. Workflow:
+-- 1. H = activate (server freezes at your position)
+-- 2. Walk to target client-side
+-- 3. T = TELEPORT (resumes 1 frame so server snaps to your real pos, then re-pauses)
+-- 4. H = deactivate (no snap, you're already there on the server)
+-- 5. Steal freely
 
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local TweenService     = game:GetService("TweenService")
+local TweenService = game:GetService("TweenService")
 
-local player  = Players.LocalPlayer
-local pg      = player:WaitForChild("PlayerGui")
+local player = Players.LocalPlayer
+local pg = player:WaitForChild("PlayerGui")
 
--- Cleanup old
 local old = pg:FindFirstChild("LBBDesync")
 if old then old:Destroy() end
 
-local keybinds     = { toggle = Enum.KeyCode.H, panel = Enum.KeyCode.U }
-local desynced     = false
-local frozenCFrame = nil
-local listeningFor = nil
+local _pause, _resume, supported = nil, nil, false
+local desynced = false
+local listening = nil
+local keybinds = { toggle = Enum.KeyCode.H, teleport = Enum.KeyCode.T, panel = Enum.KeyCode.U }
 
---==================================================
--- POSITION LOCK CORE
--- Every Heartbeat: save real CFrame, set HRP to
--- frozen pos (server sees this), then restore real
--- CFrame before render so client sees real pos.
---==================================================
-local function getHRP()
-    local char = player.Character
-    return char and char:FindFirstChild("HumanoidRootPart")
-end
-
-RunService.Heartbeat:Connect(function()
-    if not desynced or not frozenCFrame then return end
-    local hrp = getHRP()
-    if not hrp then return end
-    -- Set to frozen position — this replicates to server
-    hrp.CFrame = frozenCFrame
+-- RakNet detection
+task.spawn(function()
+    task.wait(0.1)
+    pcall(function()
+        local envs = {}
+        pcall(function() envs[#envs+1] = getgenv() end)
+        pcall(function() envs[#envs+1] = getrenv() end)
+        pcall(function() envs[#envs+1] = _G end)
+        for _, env in ipairs(envs) do
+            pcall(function()
+                local rn = env.raknet
+                if type(rn) ~= "table" then return end
+                if type(rn.desync) == "function" then
+                    _pause  = function() rn.desync(true)  end
+                    _resume = function() rn.desync(false) end
+                elseif type(rn.desync) == "table" then
+                    _pause  = rn.desync.pause  or rn.desync.enable
+                    _resume = rn.desync.resume or rn.desync.disable
+                elseif type(rn.pause) == "function" then
+                    _pause = rn.pause; _resume = rn.resume
+                end
+            end)
+            if _pause then break end
+        end
+        if not _pause then
+            pcall(function()
+                if type(raknetpause) == "function" then
+                    _pause = raknetpause; _resume = raknetresume
+                end
+            end)
+        end
+        supported = type(_pause) == "function" and type(_resume) == "function"
+        print("[LBB] RakNet supported: " .. tostring(supported))
+        updateUI()
+    end)
 end)
 
--- Restore real position before render so client sees correctly
-RunService.RenderStepped:Connect(function()
-    -- Nothing needed here — the Heartbeat lock is the mechanism.
-    -- Client movement is handled by Roblox's own character controller
-    -- which runs after Heartbeat and overwrites HRP back to real pos
-    -- before the frame renders. This is the desync gap.
-end)
-
-local function enableDesync()
-    local hrp = getHRP()
-    if not hrp then return end
-    frozenCFrame = hrp.CFrame
-    desynced = true
-    print("[LBB] DESYNCED at " .. tostring(frozenCFrame.Position))
+local function pauseNet()
+    if desynced or not supported then return end
+    pcall(_pause); desynced = true
+    print("[LBB] DESYNCED")
 end
 
-local function disableDesync()
-    desynced = false
-    frozenCFrame = nil
+local function resumeNet()
+    if not desynced then return end
+    pcall(_resume); desynced = false
     print("[LBB] RESYNCED")
 end
 
+local function teleport()
+    if not supported then return end
+    -- Resume so server position snaps to where you actually are
+    if desynced then pcall(_resume) end
+    task.wait() -- 1 frame for replication
+    -- Re-pause. Server now sees you at your real position.
+    pcall(_pause)
+    desynced = true
+    print("[LBB] TELEPORTED — server updated, re-paused")
+    updateUI()
+end
+
 player.CharacterAdded:Connect(function()
-    if desynced then disableDesync() end
-    if updateUI then updateUI() end
+    if desynced then pcall(function() _resume() end); desynced = false end
+    task.wait(0.1); updateUI()
 end)
 
---==================================================
+RunService.Heartbeat:Connect(function()
+    if not desynced then return end
+    local c = player.Character; if not c then return end
+    local h = c:FindFirstChildOfClass("Humanoid")
+    if h and h.Health <= 0 then resumeNet(); updateUI() end
+end)
+
 -- GUI
---==================================================
 local gui = Instance.new("ScreenGui")
-gui.Name = "LBBDesync"
-gui.ResetOnSpawn = false
-gui.DisplayOrder = 99999
-gui.IgnoreGuiInset = true
-gui.Enabled = true
-gui.Parent = pg
+gui.Name = "LBBDesync"; gui.ResetOnSpawn = false
+gui.DisplayOrder = 99999; gui.IgnoreGuiInset = true; gui.Parent = pg
 
 local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 260, 0, 290)
-main.Position = UDim2.new(0.5, -130, 0.5, -145)
+main.Size = UDim2.new(0, 260, 0, 300)
+main.Position = UDim2.new(0.5, -130, 0.5, -150)
 main.BackgroundColor3 = Color3.fromRGB(6, 4, 20)
-main.BorderSizePixel = 0
-main.ZIndex = 1
-main.Parent = gui
+main.BorderSizePixel = 0; main.Parent = gui
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 18)
 
-local mainBorder = Instance.new("UIStroke")
-mainBorder.Color = Color3.fromRGB(90, 50, 200)
-mainBorder.Thickness = 1.5
-mainBorder.Transparency = 0.1
-mainBorder.Parent = main
+local border = Instance.new("UIStroke")
+border.Color = Color3.fromRGB(90, 50, 200)
+border.Thickness = 1.5; border.Parent = main
 
--- Galaxy BG ZIndex 2
-local function makeGlow(col, sz, x, y, tr)
+local function mkGlow(col, sz, x, y, tr)
     local g = Instance.new("ImageLabel")
     g.Size = UDim2.new(0,sz,0,sz); g.Position = UDim2.new(0,x,0,y)
     g.BackgroundTransparency = 1; g.Image = "rbxassetid://5554236805"
@@ -108,231 +119,223 @@ local function makeGlow(col, sz, x, y, tr)
     g.ScaleType = Enum.ScaleType.Slice; g.SliceCenter = Rect.new(23,23,277,277)
     g.ZIndex = 2; g.Parent = main; return g
 end
-local glowPurple = makeGlow(Color3.fromRGB(100,40,220),220,60,-70,0.42)
-local glowBlue   = makeGlow(Color3.fromRGB(20,80,210),190,-55,160,0.48)
+local glowP = mkGlow(Color3.fromRGB(100,40,220), 220, 60, -70, 0.42)
+mkGlow(Color3.fromRGB(20,80,210), 190, -55, 160, 0.48)
 
-for i = 1,22 do
+-- stars
+for i = 1, 20 do
     local s = Instance.new("Frame")
-    s.Size = UDim2.new(0,(i%3==0)and 3 or 2,0,(i%3==0)and 3 or 2)
-    s.Position = UDim2.new(math.random(2,96)/100,0,math.random(2,96)/100,0)
+    s.Size = UDim2.new(0, 2, 0, 2)
+    s.Position = UDim2.new(math.random(3,95)/100, 0, math.random(3,95)/100, 0)
     s.BackgroundColor3 = Color3.new(1,1,1)
-    local bt = math.random(1,4)/10+0.1
-    s.BackgroundTransparency = bt
+    local b = math.random(2,5)/10; s.BackgroundTransparency = b
     s.BorderSizePixel = 0; s.ZIndex = 2; s.Parent = main
-    Instance.new("UICorner",s).CornerRadius = UDim.new(1,0)
-    local sf, base = s, bt
-    task.delay(i*0.11, function()
+    Instance.new("UICorner", s).CornerRadius = UDim.new(1, 0)
+    local sf = s
+    task.delay(i * 0.13, function()
         while true do
-            TweenService:Create(sf,TweenInfo.new(math.random(12,30)/10,Enum.EasingStyle.Sine),{BackgroundTransparency=math.min(base+0.55,0.96)}):Play()
-            task.wait(math.random(12,30)/10)
-            TweenService:Create(sf,TweenInfo.new(math.random(12,30)/10,Enum.EasingStyle.Sine),{BackgroundTransparency=base}):Play()
-            task.wait(math.random(12,30)/10)
+            TweenService:Create(sf, TweenInfo.new(1.4, Enum.EasingStyle.Sine), {BackgroundTransparency = 0.9}):Play()
+            task.wait(1.4)
+            TweenService:Create(sf, TweenInfo.new(1.4, Enum.EasingStyle.Sine), {BackgroundTransparency = b}):Play()
+            task.wait(1.4)
         end
     end)
 end
 
-for i, col in ipairs({Color3.fromRGB(140,80,255),Color3.fromRGB(60,140,255),Color3.fromRGB(200,100,255),Color3.fromRGB(80,200,255)}) do
-    local orb = Instance.new("Frame")
-    orb.Size = UDim2.new(0,math.random(4,7),0,math.random(4,7))
-    orb.Position = UDim2.new(math.random(10,90)/100,0,math.random(10,90)/100,0)
-    orb.BackgroundColor3 = col; orb.BackgroundTransparency = 0.25
-    orb.BorderSizePixel = 0; orb.ZIndex = 2; orb.Parent = main
-    Instance.new("UICorner",orb).CornerRadius = UDim.new(1,0)
-    local of = orb
-    task.delay(i*0.4, function()
+-- orbs
+for i, col in ipairs({Color3.fromRGB(140,80,255), Color3.fromRGB(60,140,255), Color3.fromRGB(200,100,255), Color3.fromRGB(80,200,255)}) do
+    local o = Instance.new("Frame")
+    o.Size = UDim2.new(0, 5, 0, 5)
+    o.Position = UDim2.new(math.random(10,85)/100, 0, math.random(10,85)/100, 0)
+    o.BackgroundColor3 = col; o.BackgroundTransparency = 0.3
+    o.BorderSizePixel = 0; o.ZIndex = 2; o.Parent = main
+    Instance.new("UICorner", o).CornerRadius = UDim.new(1, 0)
+    local of = o
+    task.delay(i * 0.5, function()
         while true do
-            TweenService:Create(of,TweenInfo.new(math.random(50,110)/10,Enum.EasingStyle.Sine),{Position=UDim2.new(math.random(5,90)/100,0,math.random(5,90)/100,0)}):Play()
-            task.wait(math.random(50,110)/10)
+            TweenService:Create(of, TweenInfo.new(math.random(6,12), Enum.EasingStyle.Sine), {Position = UDim2.new(math.random(5,88)/100, 0, math.random(5,88)/100, 0)}):Play()
+            task.wait(math.random(6,12))
         end
     end)
 end
 
--- Header drag handle ZIndex 20
+-- header (drag handle)
 local header = Instance.new("Frame")
-header.Size = UDim2.new(1,0,0,60)
-header.BackgroundTransparency = 1
-header.ZIndex = 20; header.Parent = main
+header.Size = UDim2.new(1,0,0,58); header.BackgroundTransparency = 1
+header.ZIndex = 10; header.Parent = main
 
-local titleLbl = Instance.new("TextLabel")
-titleLbl.Size = UDim2.new(1,0,0,34); titleLbl.Position = UDim2.new(0,0,0,10)
-titleLbl.BackgroundTransparency = 1; titleLbl.Text = "LBB DESYNC"
-titleLbl.TextColor3 = Color3.new(1,1,1); titleLbl.TextScaled = true
-titleLbl.Font = Enum.Font.GothamBold; titleLbl.ZIndex = 21; titleLbl.Parent = header
+local ttl = Instance.new("TextLabel", header)
+ttl.Size = UDim2.new(1,0,0,32); ttl.Position = UDim2.new(0,0,0,8)
+ttl.BackgroundTransparency = 1; ttl.Text = "LBB DESYNC"
+ttl.TextColor3 = Color3.new(1,1,1); ttl.TextScaled = true
+ttl.Font = Enum.Font.GothamBold; ttl.ZIndex = 20
 
-local subLbl = Instance.new("TextLabel")
-subLbl.Size = UDim2.new(1,0,0,16); subLbl.Position = UDim2.new(0,0,0,44)
-subLbl.BackgroundTransparency = 1; subLbl.Text = "POSITION LOCK · GALAXY"
-subLbl.TextColor3 = Color3.fromRGB(100,75,210); subLbl.TextScaled = true
-subLbl.Font = Enum.Font.Gotham; subLbl.ZIndex = 21; subLbl.Parent = header
+local sub = Instance.new("TextLabel", header)
+sub.Size = UDim2.new(1,0,0,15); sub.Position = UDim2.new(0,0,0,42)
+sub.BackgroundTransparency = 1; sub.Text = "RAKNET · GALAXY EDITION"
+sub.TextColor3 = Color3.fromRGB(100,75,210); sub.TextScaled = true
+sub.Font = Enum.Font.Gotham; sub.ZIndex = 20
 
-local divider = Instance.new("Frame")
-divider.Size = UDim2.new(0,200,0,1); divider.Position = UDim2.new(0.5,-100,0,63)
-divider.BackgroundColor3 = Color3.fromRGB(60,35,140)
-divider.BorderSizePixel = 0; divider.ZIndex = 20; divider.Parent = main
+local div = Instance.new("Frame")
+div.Size = UDim2.new(0,200,0,1); div.Position = UDim2.new(0.5,-100,0,60)
+div.BackgroundColor3 = Color3.fromRGB(60,35,140)
+div.BorderSizePixel = 0; div.ZIndex = 10; div.Parent = main
 
--- Status
-local statusDot = Instance.new("Frame")
-statusDot.Size = UDim2.new(0,10,0,10); statusDot.Position = UDim2.new(0.5,-60,0,76)
-statusDot.BackgroundColor3 = Color3.fromRGB(80,220,120)
-statusDot.BorderSizePixel = 0; statusDot.ZIndex = 20; statusDot.Parent = main
-Instance.new("UICorner",statusDot).CornerRadius = UDim.new(1,0)
+-- status dot + label
+local dot = Instance.new("Frame")
+dot.Size = UDim2.new(0,10,0,10); dot.Position = UDim2.new(0.5,-62,0,73)
+dot.BackgroundColor3 = Color3.fromRGB(80,220,120)
+dot.BorderSizePixel = 0; dot.ZIndex = 20; dot.Parent = main
+Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
 
-local statusLbl = Instance.new("TextLabel")
-statusLbl.Size = UDim2.new(0,110,0,18); statusLbl.Position = UDim2.new(0.5,-46,0,72)
-statusLbl.BackgroundTransparency = 1; statusLbl.Text = "INACTIVE"
-statusLbl.TextColor3 = Color3.fromRGB(80,220,120); statusLbl.TextScaled = true
-statusLbl.Font = Enum.Font.GothamBold
-statusLbl.TextXAlignment = Enum.TextXAlignment.Left
-statusLbl.ZIndex = 20; statusLbl.Parent = main
+local slbl = Instance.new("TextLabel")
+slbl.Size = UDim2.new(0,115,0,18); slbl.Position = UDim2.new(0.5,-48,0,69)
+slbl.BackgroundTransparency = 1; slbl.Text = "INACTIVE"
+slbl.TextColor3 = Color3.fromRGB(80,220,120); slbl.TextScaled = true
+slbl.Font = Enum.Font.GothamBold
+slbl.TextXAlignment = Enum.TextXAlignment.Left
+slbl.ZIndex = 20; slbl.Parent = main
 
--- Toggle button
-local btnBg = Instance.new("Frame")
-btnBg.Size = UDim2.new(0,220,0,50); btnBg.Position = UDim2.new(0.5,-110,0,100)
-btnBg.BackgroundColor3 = Color3.fromRGB(55,25,130)
-btnBg.BorderSizePixel = 0; btnBg.ZIndex = 20; btnBg.Parent = main
-Instance.new("UICorner",btnBg).CornerRadius = UDim.new(0,13)
+-- button factory
+local function mkBtn(txt, col, sc, y, h)
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(0,220,0,h or 46); bg.Position = UDim2.new(0.5,-110,0,y)
+    bg.BackgroundColor3 = col; bg.BorderSizePixel = 0; bg.ZIndex = 20; bg.Parent = main
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(0,12)
+    local sk = Instance.new("UIStroke"); sk.Color = sc; sk.Thickness = 1.2; sk.Transparency = 0.2; sk.Parent = bg
+    local btn = Instance.new("TextButton"); btn.Size = UDim2.new(1,0,1,0); btn.BackgroundTransparency = 1
+    btn.TextScaled = true; btn.Font = Enum.Font.GothamBold; btn.ZIndex = 21; btn.Parent = bg
+    btn.Text = txt; btn.TextColor3 = Color3.new(1,1,1)
+    return bg, btn, sk
+end
 
-local btnStroke = Instance.new("UIStroke")
-btnStroke.Color = Color3.fromRGB(120,70,255)
-btnStroke.Thickness = 1.2; btnStroke.Transparency = 0.2; btnStroke.Parent = btnBg
+local togBg, togBtn, togSk = mkBtn("ACTIVATE DESYNC", Color3.fromRGB(55,25,130), Color3.fromRGB(120,70,255), 96)
+local tpBg,  tpBtn,  tpSk  = mkBtn("⚡ TELEPORT  [T]",  Color3.fromRGB(10,45,80),  Color3.fromRGB(50,160,255), 150)
+tpBtn.TextColor3 = Color3.fromRGB(100,200,255)
 
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(1,0,1,0); toggleBtn.BackgroundTransparency = 1
-toggleBtn.Text = "ACTIVATE DESYNC"; toggleBtn.TextColor3 = Color3.new(1,1,1)
-toggleBtn.TextScaled = true; toggleBtn.Font = Enum.Font.GothamBold
-toggleBtn.ZIndex = 21; toggleBtn.Parent = btnBg
-
--- Keybind rows
-local keyBtnRefs = {}
-local function makeKeyRow(labelText, bindKey, posY)
+-- keybind rows
+local keyRefs = {}
+local function mkRow(lbl, key, y)
     local row = Instance.new("Frame")
-    row.Size = UDim2.new(0,220,0,34); row.Position = UDim2.new(0.5,-110,0,posY)
-    row.BackgroundColor3 = Color3.fromRGB(10,7,28)
-    row.BorderSizePixel = 0; row.ZIndex = 20; row.Parent = main
-    Instance.new("UICorner",row).CornerRadius = UDim.new(0,9)
+    row.Size = UDim2.new(0,220,0,32); row.Position = UDim2.new(0.5,-110,0,y)
+    row.BackgroundColor3 = Color3.fromRGB(10,7,28); row.BorderSizePixel = 0; row.ZIndex = 20; row.Parent = main
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0,9)
     local rs = Instance.new("UIStroke"); rs.Color = Color3.fromRGB(40,25,85); rs.Thickness = 1; rs.Parent = row
 
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0.55,0,1,0); lbl.Position = UDim2.new(0,10,0,0)
-    lbl.BackgroundTransparency = 1; lbl.Text = labelText
-    lbl.TextColor3 = Color3.fromRGB(140,120,200); lbl.Font = Enum.Font.Gotham
-    lbl.TextScaled = true; lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.ZIndex = 21; lbl.Parent = row
+    local l = Instance.new("TextLabel", row)
+    l.Size = UDim2.new(0.56,0,1,0); l.Position = UDim2.new(0,10,0,0)
+    l.BackgroundTransparency = 1; l.Text = lbl
+    l.TextColor3 = Color3.fromRGB(140,120,200); l.Font = Enum.Font.Gotham
+    l.TextScaled = true; l.TextXAlignment = Enum.TextXAlignment.Left; l.ZIndex = 21
 
-    local badge = Instance.new("TextButton")
-    badge.Size = UDim2.new(0.37,0,0.65,0); badge.Position = UDim2.new(0.6,0,0.175,0)
+    local badge = Instance.new("TextButton", row)
+    badge.Size = UDim2.new(0.36,0,0.65,0); badge.Position = UDim2.new(0.61,0,0.175,0)
     badge.BackgroundColor3 = Color3.fromRGB(28,16,68)
-    badge.TextColor3 = Color3.new(1,1,1); badge.Text = keybinds[bindKey].Name
+    badge.TextColor3 = Color3.new(1,1,1); badge.Text = keybinds[key].Name
     badge.TextScaled = true; badge.Font = Enum.Font.GothamBold
-    badge.BorderSizePixel = 0; badge.ZIndex = 22; badge.Parent = row
-    Instance.new("UICorner",badge).CornerRadius = UDim.new(0,7)
-
-    local bs = Instance.new("UIStroke")
-    bs.Color = Color3.fromRGB(70,45,145); bs.Thickness = 1; bs.Parent = badge
+    badge.BorderSizePixel = 0; badge.ZIndex = 22
+    Instance.new("UICorner", badge).CornerRadius = UDim.new(0,7)
+    local bs = Instance.new("UIStroke", badge); bs.Color = Color3.fromRGB(70,45,145); bs.Thickness = 1
 
     badge.MouseButton1Click:Connect(function()
-        if listeningFor then return end
-        listeningFor = bindKey
-        badge.Text = "..."; badge.TextColor3 = Color3.fromRGB(255,215,60)
-        bs.Color = Color3.fromRGB(255,200,40)
+        if listening then return end
+        listening = key; badge.Text = "..."
+        badge.TextColor3 = Color3.fromRGB(255,215,60); bs.Color = Color3.fromRGB(255,200,40)
     end)
-    keyBtnRefs[bindKey] = {badge=badge, stroke=bs}
+    keyRefs[key] = {badge = badge, stroke = bs}
 end
 
-makeKeyRow("TOGGLE DESYNC", "toggle", 164)
-makeKeyRow("HIDE PANEL",    "panel",  204)
+mkRow("TOGGLE DESYNC", "toggle",   210)
+mkRow("TELEPORT",      "teleport", 248)
+mkRow("HIDE PANEL",    "panel",    286)
 
-local creditLbl = Instance.new("TextLabel")
-creditLbl.Size = UDim2.new(1,0,0,14); creditLbl.Position = UDim2.new(0,0,1,-18)
-creditLbl.BackgroundTransparency = 1; creditLbl.Text = "LBB · GALAXY EDITION"
-creditLbl.TextColor3 = Color3.fromRGB(35,25,70); creditLbl.TextScaled = true
-creditLbl.Font = Enum.Font.Gotham; creditLbl.ZIndex = 20; creditLbl.Parent = main
+-- credit
+local cr = Instance.new("TextLabel")
+cr.Size = UDim2.new(1,0,0,12); cr.Position = UDim2.new(0,0,1,-14)
+cr.BackgroundTransparency = 1; cr.Text = "LBB · GALAXY EDITION"
+cr.TextColor3 = Color3.fromRGB(35,25,70); cr.TextScaled = true
+cr.Font = Enum.Font.Gotham; cr.ZIndex = 20; cr.Parent = main
 
---==================================================
--- UPDATE UI
---==================================================
+-- updateUI (defined after all elements exist)
 function updateUI()
     if desynced then
-        statusDot.BackgroundColor3 = Color3.fromRGB(255,70,70)
-        statusLbl.Text = "ACTIVE"
-        statusLbl.TextColor3 = Color3.fromRGB(255,70,70)
-        toggleBtn.Text = "DEACTIVATE DESYNC"
-        btnBg.BackgroundColor3 = Color3.fromRGB(110,15,35)
-        btnStroke.Color = Color3.fromRGB(255,60,80)
-        mainBorder.Color = Color3.fromRGB(220,40,70)
-        glowPurple.ImageColor3 = Color3.fromRGB(180,20,50)
+        dot.BackgroundColor3 = Color3.fromRGB(255,70,70); slbl.Text = "ACTIVE"; slbl.TextColor3 = Color3.fromRGB(255,70,70)
+        togBtn.Text = "DEACTIVATE DESYNC"; togBg.BackgroundColor3 = Color3.fromRGB(110,15,35); togSk.Color = Color3.fromRGB(255,60,80)
+        border.Color = Color3.fromRGB(220,40,70); glowP.ImageColor3 = Color3.fromRGB(180,20,50)
     else
-        statusDot.BackgroundColor3 = Color3.fromRGB(80,220,120)
-        statusLbl.Text = "INACTIVE"
-        statusLbl.TextColor3 = Color3.fromRGB(80,220,120)
-        toggleBtn.Text = "ACTIVATE DESYNC"
-        toggleBtn.TextColor3 = Color3.new(1,1,1)
-        btnBg.BackgroundColor3 = Color3.fromRGB(55,25,130)
-        btnStroke.Color = Color3.fromRGB(120,70,255)
-        mainBorder.Color = Color3.fromRGB(90,50,200)
-        glowPurple.ImageColor3 = Color3.fromRGB(100,40,220)
+        dot.BackgroundColor3 = Color3.fromRGB(80,220,120); slbl.Text = "INACTIVE"; slbl.TextColor3 = Color3.fromRGB(80,220,120)
+        if supported then
+            togBtn.Text = "ACTIVATE DESYNC"; togBtn.TextColor3 = Color3.new(1,1,1)
+            togBg.BackgroundColor3 = Color3.fromRGB(55,25,130); togSk.Color = Color3.fromRGB(120,70,255)
+            sub.Text = "RAKNET · READY ✅"; sub.TextColor3 = Color3.fromRGB(100,75,210)
+        else
+            togBtn.Text = "RAKNET NOT FOUND"; togBtn.TextColor3 = Color3.fromRGB(140,140,140)
+            togBg.BackgroundColor3 = Color3.fromRGB(40,40,40); togSk.Color = Color3.fromRGB(80,80,80)
+            sub.Text = "RAKNET · NOT FOUND ❌"; sub.TextColor3 = Color3.fromRGB(255,80,80)
+        end
+        border.Color = Color3.fromRGB(90,50,200); glowP.ImageColor3 = Color3.fromRGB(100,40,220)
     end
 end
-
 updateUI()
 
---==================================================
--- BUTTON
---==================================================
-toggleBtn.MouseButton1Click:Connect(function()
-    TweenService:Create(btnBg,TweenInfo.new(0.07,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),
-        {Size=UDim2.new(0,212,0,46),Position=UDim2.new(0.5,-106,0,102)}):Play()
-    task.delay(0.07,function()
-        TweenService:Create(btnBg,TweenInfo.new(0.14,Enum.EasingStyle.Back,Enum.EasingDirection.Out),
-            {Size=UDim2.new(0,220,0,50),Position=UDim2.new(0.5,-110,0,100)}):Play()
+-- button bounce helper
+local function bounce(bg)
+    local s, p = bg.Size, bg.Position
+    TweenService:Create(bg, TweenInfo.new(0.07, Enum.EasingStyle.Quad), {
+        Size = UDim2.new(0, s.X.Offset-8, 0, s.Y.Offset-4),
+        Position = UDim2.new(p.X.Scale, p.X.Offset+4, p.Y.Scale, p.Y.Offset+2)
+    }):Play()
+    task.delay(0.07, function()
+        TweenService:Create(bg, TweenInfo.new(0.14, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size=s, Position=p}):Play()
     end)
-    if desynced then disableDesync() else enableDesync() end
+end
+
+togBtn.MouseButton1Click:Connect(function()
+    if not supported then warn("[LBB] RakNet not found"); return end
+    bounce(togBg)
+    if desynced then resumeNet() else pauseNet() end
     updateUI()
 end)
 
---==================================================
--- DRAGGABLE — header only
---==================================================
-local dragging, dragStart, startPos
-header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true; dragStart = input.Position; startPos = main.Position
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local d = input.Position - dragStart
-        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset+d.X, startPos.Y.Scale, startPos.Y.Offset+d.Y)
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+tpBtn.MouseButton1Click:Connect(function()
+    bounce(tpBg); teleport()
 end)
 
---==================================================
--- KEYBINDS
---==================================================
+-- drag
+local drag, ds, sp
+header.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then drag=true; ds=i.Position; sp=main.Position end
+end)
+UserInputService.InputChanged:Connect(function(i)
+    if drag and i.UserInputType == Enum.UserInputType.MouseMovement then
+        local d = i.Position - ds
+        main.Position = UDim2.new(sp.X.Scale, sp.X.Offset+d.X, sp.Y.Scale, sp.Y.Offset+d.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
+end)
+
+-- keybinds
 UserInputService.InputBegan:Connect(function(input, gp)
-    if listeningFor then
+    if listening then
         if input.UserInputType == Enum.UserInputType.Keyboard then
-            keybinds[listeningFor] = input.KeyCode
-            local ref = keyBtnRefs[listeningFor]
-            if ref then
-                ref.badge.Text = input.KeyCode.Name
-                ref.badge.TextColor3 = Color3.new(1,1,1)
-                ref.stroke.Color = Color3.fromRGB(70,45,145)
-            end
-            listeningFor = nil
+            keybinds[listening] = input.KeyCode
+            local r = keyRefs[listening]
+            if r then r.badge.Text=input.KeyCode.Name; r.badge.TextColor3=Color3.new(1,1,1); r.stroke.Color=Color3.fromRGB(70,45,145) end
+            listening = nil
         end
         return
     end
     if gp then return end
     if input.KeyCode == keybinds.toggle then
-        if desynced then disableDesync() else enableDesync() end
-        updateUI()
+        if not supported then return end
+        if desynced then resumeNet() else pauseNet() end; updateUI()
+    elseif input.KeyCode == keybinds.teleport then
+        teleport()
     elseif input.KeyCode == keybinds.panel then
         gui.Enabled = not gui.Enabled
     end
 end)
 
-print("🌌 LBB Desync loaded — H = toggle | U = panel")
+print("🌌 LBB Desync | H=toggle | T=teleport | U=panel")
