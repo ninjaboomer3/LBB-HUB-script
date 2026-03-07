@@ -1,4 +1,5 @@
--- LBB DESYNC — GALAXY EDITION (Button Fix)
+-- LBB DESYNC — GALAXY EDITION
+-- GUI is built first. RakNet detection runs after in a protected spawn.
 -- Workflow: H = freeze server pos | T = snap server to real pos | H = unfreeze & steal
 
 local Players = game:GetService("Players")
@@ -20,6 +21,7 @@ local listening = nil
 local keybinds = { toggle = Enum.KeyCode.H, teleport = Enum.KeyCode.T, panel = Enum.KeyCode.U }
 local _pause, _resume, supported = nil, nil, false
 
+-- Pulse state (only addition)
 local pulseEnabled = true
 local PULSE_INTERVAL = 2
 local PULSE_DURATION = 0.08
@@ -35,8 +37,8 @@ gui.IgnoreGuiInset = true
 gui.Parent = pg
 
 local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 260, 0, 340)
-main.Position = UDim2.new(0.5, -130, 0.5, -170)
+main.Size = UDim2.new(0, 260, 0, 300)
+main.Position = UDim2.new(0.5, -130, 0.5, -150)
 main.BackgroundColor3 = Color3.fromRGB(6, 4, 20)
 main.BorderSizePixel = 0
 main.Parent = gui
@@ -113,14 +115,11 @@ for i, col in ipairs({
     end)
 end
 
--- *** FIX: header is now ONLY the top title area, not full panel size ***
--- This was the bug — header was intercepting all clicks on buttons below it
+-- header
 local header = Instance.new("Frame")
-header.Size = UDim2.new(1, 0, 0, 62) -- only covers the title/subtitle area
-header.Position = UDim2.new(0, 0, 0, 0)
+header.Size = UDim2.new(1, 0, 0, 58)
 header.BackgroundTransparency = 1
 header.ZIndex = 10
-header.Active = true  -- needed for drag to work
 header.Parent = main
 
 local ttl = Instance.new("TextLabel")
@@ -199,71 +198,9 @@ local function mkBtn(txt, col, sc, y)
     return bg, btn, sk
 end
 
-local togBg, togBtn, togSk = mkBtn("ACTIVATE DESYNC",  Color3.fromRGB(55,25,130),  Color3.fromRGB(120,70,255),  96)
-local tpBg,  tpBtn,  tpSk  = mkBtn("⚡ TELEPORT  [T]", Color3.fromRGB(10,45,80),   Color3.fromRGB(50,160,255),  150)
+local togBg, togBtn, togSk = mkBtn("ACTIVATE DESYNC", Color3.fromRGB(55,25,130), Color3.fromRGB(120,70,255), 96)
+local tpBg,  tpBtn,  tpSk  = mkBtn("⚡ TELEPORT  [T]",  Color3.fromRGB(10,45,80),  Color3.fromRGB(50,160,255), 150)
 tpBtn.TextColor3 = Color3.fromRGB(100, 200, 255)
-
--- pulse toggle row
-local pulseRow = Instance.new("Frame")
-pulseRow.Size = UDim2.new(0, 220, 0, 36)
-pulseRow.Position = UDim2.new(0.5, -110, 0, 204)
-pulseRow.BackgroundColor3 = Color3.fromRGB(10, 7, 28)
-pulseRow.BorderSizePixel = 0
-pulseRow.ZIndex = 20
-pulseRow.Parent = main
-Instance.new("UICorner", pulseRow).CornerRadius = UDim.new(0, 10)
-local prs = Instance.new("UIStroke", pulseRow)
-prs.Color = Color3.fromRGB(40,25,85); prs.Thickness = 1
-
-local pulseLabel = Instance.new("TextLabel")
-pulseLabel.Size = UDim2.new(0.62, 0, 1, 0)
-pulseLabel.Position = UDim2.new(0, 10, 0, 0)
-pulseLabel.BackgroundTransparency = 1
-pulseLabel.Text = "INTERACTION PULSE"
-pulseLabel.TextColor3 = Color3.fromRGB(140, 120, 200)
-pulseLabel.Font = Enum.Font.Gotham
-pulseLabel.TextScaled = true
-pulseLabel.TextXAlignment = Enum.TextXAlignment.Left
-pulseLabel.ZIndex = 21
-pulseLabel.Parent = pulseRow
-
-local pulseDot = Instance.new("Frame")
-pulseDot.Size = UDim2.new(0, 8, 0, 8)
-pulseDot.Position = UDim2.new(0.62, 2, 0.5, -4)
-pulseDot.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
-pulseDot.BackgroundTransparency = 0.4
-pulseDot.BorderSizePixel = 0
-pulseDot.ZIndex = 22
-pulseDot.Parent = pulseRow
-Instance.new("UICorner", pulseDot).CornerRadius = UDim.new(1, 0)
-
-local pulseToggleBtn = Instance.new("TextButton")
-pulseToggleBtn.Size = UDim2.new(0.28, 0, 0.6, 0)
-pulseToggleBtn.Position = UDim2.new(0.7, 0, 0.2, 0)
-pulseToggleBtn.BackgroundColor3 = Color3.fromRGB(32, 138, 58)
-pulseToggleBtn.TextColor3 = Color3.white
-pulseToggleBtn.Text = "ON"
-pulseToggleBtn.TextScaled = true
-pulseToggleBtn.Font = Enum.Font.GothamBold
-pulseToggleBtn.BorderSizePixel = 0
-pulseToggleBtn.ZIndex = 22
-pulseToggleBtn.Parent = pulseRow
-Instance.new("UICorner", pulseToggleBtn).CornerRadius = UDim.new(1, 0)
-
-pulseToggleBtn.MouseButton1Click:Connect(function()
-    pulseEnabled = not pulseEnabled
-    if pulseEnabled then
-        pulseToggleBtn.BackgroundColor3 = Color3.fromRGB(32, 138, 58)
-        pulseToggleBtn.Text = "ON"
-        pulseDot.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
-        prs.Color = Color3.fromRGB(40,25,85)
-    else
-        pulseToggleBtn.BackgroundColor3 = Color3.fromRGB(100, 30, 30)
-        pulseToggleBtn.Text = "OFF"
-        pulseDot.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
-        prs.Color = Color3.fromRGB(80,25,25)
-    end
-end)
 
 -- keybind rows
 local keyRefs = {}
@@ -300,10 +237,11 @@ local function mkRow(lbl, key, y)
     keyRefs[key] = { badge = badge, stroke = bs }
 end
 
-mkRow("TOGGLE DESYNC", "toggle",   250)
-mkRow("TELEPORT",      "teleport", 288)
-mkRow("HIDE PANEL",    "panel",    326)
+mkRow("TOGGLE DESYNC", "toggle",   210)
+mkRow("TELEPORT",      "teleport", 248)
+mkRow("HIDE PANEL",    "panel",    286)
 
+-- credit
 local cr = Instance.new("TextLabel")
 cr.Size = UDim2.new(1, 0, 0, 12); cr.Position = UDim2.new(0, 0, 1, -14)
 cr.BackgroundTransparency = 1; cr.Text = "LBB · GALAXY EDITION"
@@ -334,7 +272,7 @@ local function updateUI()
     end
 end
 
---// RAKNET DETECTION
+--// RAKNET DETECTION — fully protected, runs after UI is visible
 task.spawn(function()
     task.wait(0.2)
     pcall(function()
@@ -401,29 +339,19 @@ player.CharacterAdded:Connect(function()
     task.wait(0.1); updateUI()
 end)
 
---// HEARTBEAT
+--// HEARTBEAT — original death check + new pulse
 RunService.Heartbeat:Connect(function(dt)
-    if desynced then
-        local c = player.Character
-        if c then
-            local h = c:FindFirstChildOfClass("Humanoid")
-            if h and h.Health <= 0 then resumeNet(); updateUI() end
-        end
-    end
+    if not desynced then return end
+    local c = player.Character; if not c then return end
+    local h = c:FindFirstChildOfClass("Humanoid")
+    if h and h.Health <= 0 then resumeNet(); updateUI() end
 
-    if not desynced or not pulseEnabled or not supported or pulsing then return end
+    -- interaction pulse
+    if not pulseEnabled or not supported or pulsing then return end
     pulseTimer += dt
     if pulseTimer < PULSE_INTERVAL then return end
     pulseTimer = 0
     pulsing = true
-
-    pulseDot.BackgroundTransparency = 0
-    pulseDot.BackgroundColor3 = Color3.fromRGB(255, 220, 60)
-    TweenService:Create(pulseDot, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
-        BackgroundTransparency = 0.4,
-        BackgroundColor3 = Color3.fromRGB(80, 200, 120),
-    }):Play()
-
     task.spawn(function()
         pcall(_resume)
         task.wait(PULSE_DURATION)
@@ -454,7 +382,7 @@ tpBtn.MouseButton1Click:Connect(function()
     bounce(tpBg); teleport()
 end)
 
---// DRAG — only triggers on the header strip at the top
+--// DRAG
 local drag, ds, sp
 header.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 then
