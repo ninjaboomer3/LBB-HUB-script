@@ -1,13 +1,12 @@
 --==================================================
--- LBB DESYNC
--- RakNet desync with full UI + keybinds
--- U = toggle panel | G (hold) = desync
--- H = toggle desync | J = switch hold/toggle mode
+-- LBB DESYNC — GALAXY EDITION
+-- H = toggle desync | U = toggle panel
 --==================================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -19,7 +18,7 @@ local hrp = character:WaitForChild("HumanoidRootPart")
 local desynced = false
 
 --==================================================
--- RAKNET HELPERS
+-- RAKNET
 --==================================================
 local function pauseNet()
     if desynced then return end
@@ -35,7 +34,6 @@ local function resumeNet()
     print("[LBB Desync] RESUMED")
 end
 
--- Auto resume on respawn
 player.CharacterAdded:Connect(function(c)
     character = c
     hrp = c:WaitForChild("HumanoidRootPart")
@@ -45,7 +43,7 @@ player.CharacterAdded:Connect(function(c)
 end)
 
 --==================================================
--- UI
+-- GUI
 --==================================================
 local gui = Instance.new("ScreenGui")
 gui.Name = "LBBDesync"
@@ -54,157 +52,304 @@ gui.DisplayOrder = 99999
 gui.Enabled = true
 gui.Parent = player:WaitForChild("PlayerGui")
 
--- Main frame
+-- Root frame
 local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 280, 0, 320)
-main.Position = UDim2.new(0.5, -140, 0.5, -160)
-main.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+main.Size = UDim2.new(0, 260, 0, 280)
+main.Position = UDim2.new(0.5, -130, 0.5, -140)
+main.BackgroundColor3 = Color3.fromRGB(5, 5, 18)
 main.BorderSizePixel = 0
+main.ClipsDescendants = true
 main.Parent = gui
-Instance.new("UICorner", main).CornerRadius = UDim.new(0, 14)
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 20)
 
--- Drop shadow
-local shadow = Instance.new("ImageLabel")
-shadow.Size = UDim2.new(1, 30, 1, 30)
-shadow.Position = UDim2.new(0, -15, 0, -15)
-shadow.BackgroundTransparency = 1
-shadow.Image = "rbxassetid://5554236805"
-shadow.ImageColor3 = Color3.new(0, 0, 0)
-shadow.ImageTransparency = 0.5
-shadow.ScaleType = Enum.ScaleType.Slice
-shadow.SliceCenter = Rect.new(23, 23, 277, 277)
-shadow.ZIndex = 0
-shadow.Parent = main
-
--- Header bar
-local header = Instance.new("Frame")
-header.Size = UDim2.new(1, 0, 0, 50)
-header.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
-header.BorderSizePixel = 0
-header.Parent = main
-Instance.new("UICorner", header).CornerRadius = UDim.new(0, 14)
-
--- Fix header bottom corners
-local headerFix = Instance.new("Frame")
-headerFix.Size = UDim2.new(1, 0, 0, 14)
-headerFix.Position = UDim2.new(0, 0, 1, -14)
-headerFix.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
-headerFix.BorderSizePixel = 0
-headerFix.Parent = header
-
--- Title
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -20, 1, 0)
-title.Position = UDim2.new(0, 15, 0, 0)
-title.BackgroundTransparency = 1
-title.Text = "LBB Desync"
-title.TextColor3 = Color3.new(1, 1, 1)
-title.TextScaled = true
-title.Font = Enum.Font.GothamBold
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = header
-
--- Status indicator dot
-local dot = Instance.new("Frame")
-dot.Size = UDim2.new(0, 12, 0, 12)
-dot.Position = UDim2.new(1, -25, 0.5, -6)
-dot.BackgroundColor3 = Color3.fromRGB(80, 255, 80)
-dot.BorderSizePixel = 0
-dot.Parent = header
-Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-
--- Status label
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -20, 0, 30)
-statusLabel.Position = UDim2.new(0, 10, 0, 58)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Status: INACTIVE"
-statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-statusLabel.TextScaled = true
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-statusLabel.Parent = main
-
-
-
--- Helper to make buttons
-local function makeButton(text, posY, color)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -20, 0, 44)
-    btn.Position = UDim2.new(0, 10, 0, posY)
-    btn.BackgroundColor3 = color or Color3.fromRGB(45, 45, 58)
-    btn.TextColor3 = Color3.new(1, 1, 1)
-    btn.Text = text
-    btn.TextScaled = true
-    btn.Font = Enum.Font.GothamBold
-    btn.BorderSizePixel = 0
-    btn.Parent = main
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
-
-    -- Hover effect
-    btn.MouseEnter:Connect(function()
-        btn.BackgroundColor3 = Color3.fromRGB(
-            math.min(btn.BackgroundColor3.R * 255 + 20, 255),
-            math.min(btn.BackgroundColor3.G * 255 + 20, 255),
-            math.min(btn.BackgroundColor3.B * 255 + 20, 255)
-        )
-    end)
-    btn.MouseLeave:Connect(function()
-        btn.BackgroundColor3 = color or Color3.fromRGB(45, 45, 58)
-    end)
-
-    return btn
-end
-
-local toggleBtn = makeButton("⏸  Desync: OFF", 115, Color3.fromRGB(45, 45, 58))
-
--- Keybind hint
-local hint = Instance.new("TextLabel")
-hint.Size = UDim2.new(1, -20, 0, 20)
-hint.Position = UDim2.new(0, 10, 1, -28)
-hint.BackgroundTransparency = 1
-hint.Text = "U = panel  |  H = toggle desync"
-hint.TextColor3 = Color3.fromRGB(80, 80, 100)
-hint.TextScaled = true
-hint.Font = Enum.Font.Gotham
-hint.Parent = main
+-- Outer glow border
+local border = Instance.new("UIStroke")
+border.Color = Color3.fromRGB(80, 40, 180)
+border.Thickness = 1.5
+border.Transparency = 0.2
+border.Parent = main
 
 --==================================================
--- UPDATE UI STATE
+-- GALAXY BACKGROUND LAYERS
+--==================================================
+-- Deep nebula gradient background
+local nebula = Instance.new("ImageLabel")
+nebula.Size = UDim2.new(1, 0, 1, 0)
+nebula.BackgroundTransparency = 1
+nebula.Image = "rbxassetid://6370740891" -- gradient noise texture
+nebula.ImageColor3 = Color3.fromRGB(20, 10, 60)
+nebula.ImageTransparency = 0.6
+nebula.ScaleType = Enum.ScaleType.Crop
+nebula.ZIndex = 1
+nebula.Parent = main
+
+-- Purple glow blob top-right
+local glowA = Instance.new("ImageLabel")
+glowA.Size = UDim2.new(0, 200, 0, 200)
+glowA.Position = UDim2.new(1, -80, 0, -80)
+glowA.BackgroundTransparency = 1
+glowA.Image = "rbxassetid://5554236805"
+glowA.ImageColor3 = Color3.fromRGB(100, 40, 220)
+glowA.ImageTransparency = 0.5
+glowA.ScaleType = Enum.ScaleType.Slice
+glowA.SliceCenter = Rect.new(23, 23, 277, 277)
+glowA.ZIndex = 1
+glowA.Parent = main
+
+-- Blue glow blob bottom-left
+local glowB = Instance.new("ImageLabel")
+glowB.Size = UDim2.new(0, 180, 0, 180)
+glowB.Position = UDim2.new(0, -60, 1, -100)
+glowB.BackgroundTransparency = 1
+glowB.Image = "rbxassetid://5554236805"
+glowB.ImageColor3 = Color3.fromRGB(20, 80, 200)
+glowB.ImageTransparency = 0.55
+glowB.ScaleType = Enum.ScaleType.Slice
+glowB.SliceCenter = Rect.new(23, 23, 277, 277)
+glowB.ZIndex = 1
+glowB.Parent = main
+
+--==================================================
+-- FLOATING STAR PARTICLES
+--==================================================
+local starSizes = {3, 2, 2, 3, 2, 3, 2, 2, 3, 2, 2, 2, 3, 2, 2, 2, 2, 3, 2, 2}
+local starAlphas = {0.9, 0.6, 0.8, 0.7, 0.9, 0.5, 0.8, 0.6, 0.9, 0.7, 0.6, 0.8, 0.9, 0.5, 0.7, 0.8, 0.6, 0.9, 0.7, 0.5}
+local stars = {}
+
+for i = 1, 20 do
+    local star = Instance.new("Frame")
+    local s = starSizes[i]
+    star.Size = UDim2.new(0, s, 0, s)
+    star.Position = UDim2.new(math.random(0, 100) / 100, 0, math.random(0, 100) / 100, 0)
+    star.BackgroundColor3 = Color3.new(1, 1, 1)
+    star.BackgroundTransparency = 1 - starAlphas[i]
+    star.BorderSizePixel = 0
+    star.ZIndex = 2
+    star.Parent = main
+    Instance.new("UICorner", star).CornerRadius = UDim.new(1, 0)
+    table.insert(stars, star)
+end
+
+-- Animate stars (twinkle + slow drift)
+for i, star in ipairs(stars) do
+    local baseAlpha = 1 - starAlphas[i]
+    local function twinkle()
+        while true do
+            local t = TweenService:Create(star,
+                TweenInfo.new(math.random(15, 35) / 10, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                {BackgroundTransparency = math.min(baseAlpha + 0.5, 0.98)}
+            )
+            t:Play(); t.Completed:Wait()
+            local t2 = TweenService:Create(star,
+                TweenInfo.new(math.random(15, 35) / 10, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                {BackgroundTransparency = baseAlpha}
+            )
+            t2:Play(); t2.Completed:Wait()
+        end
+    end
+    task.delay(i * 0.15, function() task.spawn(twinkle) end)
+end
+
+-- A few larger glowing orbs drifting slowly
+for i = 1, 4 do
+    local orb = Instance.new("Frame")
+    orb.Size = UDim2.new(0, math.random(4, 7), 0, math.random(4, 7))
+    orb.Position = UDim2.new(math.random(10, 90) / 100, 0, math.random(10, 90) / 100, 0)
+    local colors = {
+        Color3.fromRGB(160, 100, 255),
+        Color3.fromRGB(80, 160, 255),
+        Color3.fromRGB(200, 130, 255),
+        Color3.fromRGB(100, 200, 255),
+    }
+    orb.BackgroundColor3 = colors[i]
+    orb.BackgroundTransparency = 0.3
+    orb.BorderSizePixel = 0
+    orb.ZIndex = 2
+    orb.Parent = main
+    Instance.new("UICorner", orb).CornerRadius = UDim.new(1, 0)
+
+    local function drift()
+        while true do
+            local newX = math.random(5, 95) / 100
+            local newY = math.random(5, 95) / 100
+            local t = TweenService:Create(orb,
+                TweenInfo.new(math.random(60, 120) / 10, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                {Position = UDim2.new(newX, 0, newY, 0)}
+            )
+            t:Play(); t.Completed:Wait()
+        end
+    end
+    task.delay(i * 0.5, function() task.spawn(drift) end)
+end
+
+--==================================================
+-- UI CONTENT (above particles, ZIndex 5+)
+--==================================================
+
+-- Header
+local headerLabel = Instance.new("TextLabel")
+headerLabel.Size = UDim2.new(1, 0, 0, 38)
+headerLabel.Position = UDim2.new(0, 0, 0, 18)
+headerLabel.BackgroundTransparency = 1
+headerLabel.Text = "LBB DESYNC"
+headerLabel.TextColor3 = Color3.new(1, 1, 1)
+headerLabel.TextScaled = true
+headerLabel.Font = Enum.Font.GothamBold
+headerLabel.ZIndex = 6
+headerLabel.Parent = main
+
+-- Subtitle
+local subtitle = Instance.new("TextLabel")
+subtitle.Size = UDim2.new(1, 0, 0, 20)
+subtitle.Position = UDim2.new(0, 0, 0, 54)
+subtitle.BackgroundTransparency = 1
+subtitle.Text = "RAKNET PACKET CONTROL"
+subtitle.TextColor3 = Color3.fromRGB(130, 100, 220)
+subtitle.TextScaled = true
+subtitle.Font = Enum.Font.Gotham
+subtitle.ZIndex = 6
+subtitle.LetterSpacing = 5
+subtitle.Parent = main
+
+-- Divider line
+local divider = Instance.new("Frame")
+divider.Size = UDim2.new(0, 180, 0, 1)
+divider.Position = UDim2.new(0.5, -90, 0, 82)
+divider.BackgroundColor3 = Color3.fromRGB(80, 50, 160)
+divider.BorderSizePixel = 0
+divider.ZIndex = 6
+divider.Parent = main
+
+-- Status dot + label row
+local dotFrame = Instance.new("Frame")
+dotFrame.Size = UDim2.new(0, 120, 0, 28)
+dotFrame.Position = UDim2.new(0.5, -60, 0, 96)
+dotFrame.BackgroundTransparency = 1
+dotFrame.ZIndex = 6
+dotFrame.Parent = main
+
+local statusDot = Instance.new("Frame")
+statusDot.Size = UDim2.new(0, 10, 0, 10)
+statusDot.Position = UDim2.new(0, 0, 0.5, -5)
+statusDot.BackgroundColor3 = Color3.fromRGB(80, 220, 120)
+statusDot.BorderSizePixel = 0
+statusDot.ZIndex = 7
+statusDot.Parent = dotFrame
+Instance.new("UICorner", statusDot).CornerRadius = UDim.new(1, 0)
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -18, 1, 0)
+statusLabel.Position = UDim2.new(0, 18, 0, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "INACTIVE"
+statusLabel.TextColor3 = Color3.fromRGB(80, 220, 120)
+statusLabel.TextScaled = true
+statusLabel.Font = Enum.Font.GothamBold
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.ZIndex = 7
+statusLabel.Parent = dotFrame
+
+-- Main toggle button
+local btnOuter = Instance.new("Frame")
+btnOuter.Size = UDim2.new(0, 200, 0, 52)
+btnOuter.Position = UDim2.new(0.5, -100, 0, 138)
+btnOuter.BackgroundColor3 = Color3.fromRGB(60, 30, 130)
+btnOuter.BorderSizePixel = 0
+btnOuter.ZIndex = 6
+btnOuter.Parent = main
+Instance.new("UICorner", btnOuter).CornerRadius = UDim.new(0, 14)
+
+local btnStroke = Instance.new("UIStroke")
+btnStroke.Color = Color3.fromRGB(120, 70, 255)
+btnStroke.Thickness = 1
+btnStroke.Transparency = 0.3
+btnStroke.Parent = btnOuter
+
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(1, 0, 1, 0)
+toggleBtn.BackgroundTransparency = 1
+toggleBtn.Text = "ACTIVATE DESYNC"
+toggleBtn.TextColor3 = Color3.new(1, 1, 1)
+toggleBtn.TextScaled = true
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.ZIndex = 7
+toggleBtn.Parent = btnOuter
+
+-- Keybind hint
+local keyhint = Instance.new("TextLabel")
+keyhint.Size = UDim2.new(1, 0, 0, 20)
+keyhint.Position = UDim2.new(0, 0, 0, 202)
+keyhint.BackgroundTransparency = 1
+keyhint.Text = "H  —  TOGGLE        U  —  HIDE"
+keyhint.TextColor3 = Color3.fromRGB(70, 60, 110)
+keyhint.TextScaled = true
+keyhint.Font = Enum.Font.Gotham
+keyhint.ZIndex = 6
+keyhint.Parent = main
+
+-- Credit
+local credit = Instance.new("TextLabel")
+credit.Size = UDim2.new(1, 0, 0, 16)
+credit.Position = UDim2.new(0, 0, 1, -22)
+credit.BackgroundTransparency = 1
+credit.Text = "LBB — GALAXY EDITION"
+credit.TextColor3 = Color3.fromRGB(50, 40, 90)
+credit.TextScaled = true
+credit.Font = Enum.Font.Gotham
+credit.ZIndex = 6
+credit.Parent = main
+
+--==================================================
+-- UPDATE UI
 --==================================================
 function updateUI()
     if desynced then
-        statusLabel.Text = "Status: ACTIVE"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-        dot.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-        toggleBtn.Text = "▶  Desync: ON"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        -- Red/hot state
+        statusDot.BackgroundColor3 = Color3.fromRGB(255, 70, 70)
+        statusLabel.Text = "ACTIVE"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 70, 70)
+        toggleBtn.Text = "DEACTIVATE DESYNC"
+        btnOuter.BackgroundColor3 = Color3.fromRGB(120, 20, 40)
+        btnStroke.Color = Color3.fromRGB(255, 80, 80)
+        border.Color = Color3.fromRGB(220, 50, 80)
+        glowA.ImageColor3 = Color3.fromRGB(180, 30, 60)
     else
-        statusLabel.Text = "Status: INACTIVE"
-        statusLabel.TextColor3 = Color3.fromRGB(80, 255, 80)
-        dot.BackgroundColor3 = Color3.fromRGB(80, 255, 80)
-        toggleBtn.Text = "⏸  Desync: OFF"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 58)
+        -- Purple/galaxy state
+        statusDot.BackgroundColor3 = Color3.fromRGB(80, 220, 120)
+        statusLabel.Text = "INACTIVE"
+        statusLabel.TextColor3 = Color3.fromRGB(80, 220, 120)
+        toggleBtn.Text = "ACTIVATE DESYNC"
+        btnOuter.BackgroundColor3 = Color3.fromRGB(60, 30, 130)
+        btnStroke.Color = Color3.fromRGB(120, 70, 255)
+        border.Color = Color3.fromRGB(80, 40, 180)
+        glowA.ImageColor3 = Color3.fromRGB(100, 40, 220)
     end
 end
 
 updateUI()
 
---==================================================
--- BUTTON LOGIC
---==================================================
+-- Button pulse animation on click
 toggleBtn.MouseButton1Click:Connect(function()
+    local t = TweenService:Create(btnOuter,
+        TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {Size = UDim2.new(0, 192, 0, 48)}
+    )
+    t:Play()
+    t.Completed:Connect(function()
+        TweenService:Create(btnOuter,
+            TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            {Size = UDim2.new(0, 200, 0, 52)}
+        ):Play()
+    end)
     if desynced then resumeNet() else pauseNet() end
     updateUI()
 end)
 
-
-
 --==================================================
--- DRAGGABLE PANEL
+-- DRAGGABLE
 --==================================================
 local dragging, dragStart, startPos
-header.InputBegan:Connect(function(input)
+main.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
         dragStart = input.Position
@@ -231,11 +376,9 @@ end)
 --==================================================
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
-
     if input.KeyCode == Enum.KeyCode.H then
         if desynced then resumeNet() else pauseNet() end
         updateUI()
-
     elseif input.KeyCode == Enum.KeyCode.U then
         gui.Enabled = not gui.Enabled
     end
@@ -255,4 +398,4 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-print("🟢 LBB Desync loaded. U = panel | H = toggle desync")
+print("🌌 LBB Desync — Galaxy Edition loaded. H = toggle | U = panel")
