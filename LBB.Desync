@@ -1,406 +1,54 @@
---==================================================
--- LBB DESYNC — GALAXY EDITION
--- UI is created FIRST before any detection runs.
--- Nothing can stop the panel from appearing.
---==================================================
+-- LBB DESYNC — MINIMUM TEST
+-- If this shows nothing, the issue is your executor/game blocking ScreenGuis
 
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService     = game:GetService("TweenService")
+local player = game:GetService("Players").LocalPlayer
 
-local player    = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
+-- Wait for PlayerGui
+local pg = player:WaitForChild("PlayerGui", 10)
+if not pg then warn("NO PLAYERGUI"); return end
 
-local keybinds     = { toggle = Enum.KeyCode.H, panel = Enum.KeyCode.U }
-local desynced     = false
-local listeningFor = nil
-local _pause, _resume, supported
+-- Remove old instance if re-executing
+local old = pg:FindFirstChild("LBBDesync")
+if old then old:Destroy() end
 
---==================================================
--- GUI FIRST — nothing below can break this
---==================================================
 local gui = Instance.new("ScreenGui")
-gui.Name         = "LBBDesync"
+gui.Name = "LBBDesync"
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 99999
-gui.Enabled      = true
-gui.Parent       = player:WaitForChild("PlayerGui")
+gui.IgnoreGuiInset = true
+gui.Parent = pg
 
-local main = Instance.new("Frame")
-main.Size             = UDim2.new(0, 260, 0, 310)
-main.Position         = UDim2.new(0.5, -130, 0.5, -155)
-main.BackgroundColor3 = Color3.fromRGB(6, 4, 20)
-main.BorderSizePixel  = 0
-main.ZIndex           = 1
-main.Parent           = gui
-Instance.new("UICorner", main).CornerRadius = UDim.new(0, 18)
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 260, 0, 100)
+frame.Position = UDim2.new(0.5, -130, 0.5, -50)
+frame.BackgroundColor3 = Color3.fromRGB(6, 4, 20)
+frame.BorderSizePixel = 2
+frame.Parent = gui
 
-local mainBorder = Instance.new("UIStroke")
-mainBorder.Color        = Color3.fromRGB(90, 50, 200)
-mainBorder.Thickness    = 1.5
-mainBorder.Transparency = 0.1
-mainBorder.Parent       = main
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, 0, 0.5, 0)
+label.Position = UDim2.new(0, 0, 0, 0)
+label.BackgroundTransparency = 1
+label.Text = "LBB DESYNC"
+label.TextColor3 = Color3.new(1, 1, 1)
+label.TextScaled = true
+label.Font = Enum.Font.GothamBold
+label.Parent = frame
 
--- Galaxy BG (ZIndex 2)
-local function makeGlow(col, sz, x, y, tr)
-    local g = Instance.new("ImageLabel")
-    g.Size = UDim2.new(0,sz,0,sz); g.Position = UDim2.new(0,x,0,y)
-    g.BackgroundTransparency = 1; g.Image = "rbxassetid://5554236805"
-    g.ImageColor3 = col; g.ImageTransparency = tr
-    g.ScaleType = Enum.ScaleType.Slice; g.SliceCenter = Rect.new(23,23,277,277)
-    g.ZIndex = 2; g.Parent = main; return g
-end
-local glowPurple = makeGlow(Color3.fromRGB(100,40,220),220,60,-70,0.42)
-local glowBlue   = makeGlow(Color3.fromRGB(20,80,210),190,-55,180,0.48)
+local btn = Instance.new("TextButton")
+btn.Size = UDim2.new(1, 0, 0.5, 0)
+btn.Position = UDim2.new(0, 0, 0.5, 0)
+btn.BackgroundColor3 = Color3.fromRGB(55, 25, 130)
+btn.TextColor3 = Color3.new(1, 1, 1)
+btn.Text = "ACTIVATE DESYNC"
+btn.TextScaled = true
+btn.Font = Enum.Font.GothamBold
+btn.Parent = frame
 
-for i = 1, 22 do
-    local s = Instance.new("Frame")
-    s.Size = UDim2.new(0,(i%3==0)and 3 or 2,0,(i%3==0)and 3 or 2)
-    s.Position = UDim2.new(math.random(2,96)/100,0,math.random(2,96)/100,0)
-    s.BackgroundColor3 = Color3.new(1,1,1)
-    local bt = math.random(1,4)/10+0.1; s.BackgroundTransparency = bt
-    s.BorderSizePixel=0; s.ZIndex=2; s.Parent=main
-    Instance.new("UICorner",s).CornerRadius=UDim.new(1,0)
-    local sf,base=s,bt
-    task.delay(i*0.11,function()
-        while true do
-            TweenService:Create(sf,TweenInfo.new(math.random(12,30)/10,Enum.EasingStyle.Sine),{BackgroundTransparency=math.min(base+0.55,0.96)}):Play()
-            task.wait(math.random(12,30)/10)
-            TweenService:Create(sf,TweenInfo.new(math.random(12,30)/10,Enum.EasingStyle.Sine),{BackgroundTransparency=base}):Play()
-            task.wait(math.random(12,30)/10)
-        end
-    end)
-end
-
-for i,col in ipairs({Color3.fromRGB(140,80,255),Color3.fromRGB(60,140,255),Color3.fromRGB(200,100,255),Color3.fromRGB(80,200,255)}) do
-    local orb=Instance.new("Frame")
-    orb.Size=UDim2.new(0,math.random(4,7),0,math.random(4,7))
-    orb.Position=UDim2.new(math.random(10,90)/100,0,math.random(10,90)/100,0)
-    orb.BackgroundColor3=col; orb.BackgroundTransparency=0.25
-    orb.BorderSizePixel=0; orb.ZIndex=2; orb.Parent=main
-    Instance.new("UICorner",orb).CornerRadius=UDim.new(1,0)
-    local of=orb
-    task.delay(i*0.4,function()
-        while true do
-            TweenService:Create(of,TweenInfo.new(math.random(50,110)/10,Enum.EasingStyle.Sine),{Position=UDim2.new(math.random(5,90)/100,0,math.random(5,90)/100,0)}):Play()
-            task.wait(math.random(50,110)/10)
-        end
-    end)
-end
-
--- Header (drag handle, ZIndex 20)
-local header=Instance.new("Frame")
-header.Size=UDim2.new(1,0,0,60); header.BackgroundTransparency=1
-header.ZIndex=20; header.Parent=main
-
-local titleLbl=Instance.new("TextLabel")
-titleLbl.Size=UDim2.new(1,0,0,34); titleLbl.Position=UDim2.new(0,0,0,10)
-titleLbl.BackgroundTransparency=1; titleLbl.Text="LBB DESYNC"
-titleLbl.TextColor3=Color3.new(1,1,1); titleLbl.TextScaled=true
-titleLbl.Font=Enum.Font.GothamBold; titleLbl.ZIndex=21; titleLbl.Parent=header
-
-local subLbl=Instance.new("TextLabel")
-subLbl.Size=UDim2.new(1,0,0,16); subLbl.Position=UDim2.new(0,0,0,44)
-subLbl.BackgroundTransparency=1; subLbl.Text="SEARCHING FOR RAKNET..."
-subLbl.TextColor3=Color3.fromRGB(150,150,150); subLbl.TextScaled=true
-subLbl.Font=Enum.Font.Gotham; subLbl.ZIndex=21; subLbl.Parent=header
-
-local divider=Instance.new("Frame")
-divider.Size=UDim2.new(0,200,0,1); divider.Position=UDim2.new(0.5,-100,0,63)
-divider.BackgroundColor3=Color3.fromRGB(60,35,140)
-divider.BorderSizePixel=0; divider.ZIndex=20; divider.Parent=main
-
--- Status dot + label
-local statusDot=Instance.new("Frame")
-statusDot.Size=UDim2.new(0,10,0,10); statusDot.Position=UDim2.new(0.5,-60,0,76)
-statusDot.BackgroundColor3=Color3.fromRGB(80,220,120)
-statusDot.BorderSizePixel=0; statusDot.ZIndex=20; statusDot.Parent=main
-Instance.new("UICorner",statusDot).CornerRadius=UDim.new(1,0)
-
-local statusLbl=Instance.new("TextLabel")
-statusLbl.Size=UDim2.new(0,100,0,18); statusLbl.Position=UDim2.new(0.5,-46,0,72)
-statusLbl.BackgroundTransparency=1; statusLbl.Text="INACTIVE"
-statusLbl.TextColor3=Color3.fromRGB(80,220,120); statusLbl.TextScaled=true
-statusLbl.Font=Enum.Font.GothamBold; statusLbl.TextXAlignment=Enum.TextXAlignment.Left
-statusLbl.ZIndex=20; statusLbl.Parent=main
-
--- Toggle button
-local btnBg=Instance.new("Frame")
-btnBg.Size=UDim2.new(0,220,0,52); btnBg.Position=UDim2.new(0.5,-110,0,102)
-btnBg.BackgroundColor3=Color3.fromRGB(40,40,40)
-btnBg.BorderSizePixel=0; btnBg.ZIndex=20; btnBg.Parent=main
-Instance.new("UICorner",btnBg).CornerRadius=UDim.new(0,13)
-
-local btnStroke=Instance.new("UIStroke")
-btnStroke.Color=Color3.fromRGB(80,80,80); btnStroke.Thickness=1.2
-btnStroke.Transparency=0.2; btnStroke.Parent=btnBg
-
-local toggleBtn=Instance.new("TextButton")
-toggleBtn.Size=UDim2.new(1,0,1,0); toggleBtn.BackgroundTransparency=1
-toggleBtn.Text="SEARCHING..."; toggleBtn.TextColor3=Color3.fromRGB(140,140,140)
-toggleBtn.TextScaled=true; toggleBtn.Font=Enum.Font.GothamBold
-toggleBtn.ZIndex=21; toggleBtn.Parent=btnBg
-
--- Keybind rows
-local keyBtnRefs={}
-local function makeKeyRow(labelText,bindKey,posY)
-    local row=Instance.new("Frame")
-    row.Size=UDim2.new(0,220,0,34); row.Position=UDim2.new(0.5,-110,0,posY)
-    row.BackgroundColor3=Color3.fromRGB(10,7,28)
-    row.BorderSizePixel=0; row.ZIndex=20; row.Parent=main
-    Instance.new("UICorner",row).CornerRadius=UDim.new(0,9)
-    local rs=Instance.new("UIStroke"); rs.Color=Color3.fromRGB(40,25,85); rs.Thickness=1; rs.Parent=row
-
-    local lbl=Instance.new("TextLabel")
-    lbl.Size=UDim2.new(0.55,0,1,0); lbl.Position=UDim2.new(0,10,0,0)
-    lbl.BackgroundTransparency=1; lbl.Text=labelText
-    lbl.TextColor3=Color3.fromRGB(140,120,200); lbl.Font=Enum.Font.Gotham
-    lbl.TextScaled=true; lbl.TextXAlignment=Enum.TextXAlignment.Left
-    lbl.ZIndex=21; lbl.Parent=row
-
-    local badge=Instance.new("TextButton")
-    badge.Size=UDim2.new(0.37,0,0.68,0); badge.Position=UDim2.new(0.6,0,0.16,0)
-    badge.BackgroundColor3=Color3.fromRGB(28,16,68)
-    badge.TextColor3=Color3.new(1,1,1); badge.Text=keybinds[bindKey].Name
-    badge.TextScaled=true; badge.Font=Enum.Font.GothamBold
-    badge.BorderSizePixel=0; badge.ZIndex=22; badge.Parent=row
-    Instance.new("UICorner",badge).CornerRadius=UDim.new(0,7)
-    local bs=Instance.new("UIStroke"); bs.Color=Color3.fromRGB(70,45,145); bs.Thickness=1; bs.Parent=badge
-
-    badge.MouseButton1Click:Connect(function()
-        if listeningFor then return end
-        listeningFor=bindKey; badge.Text="..."
-        badge.TextColor3=Color3.fromRGB(255,215,60); bs.Color=Color3.fromRGB(255,200,40)
-    end)
-    keyBtnRefs[bindKey]={badge=badge,stroke=bs}
-end
-makeKeyRow("TOGGLE DESYNC","toggle",172)
-makeKeyRow("HIDE PANEL","panel",214)
-
-local creditLbl=Instance.new("TextLabel")
-creditLbl.Size=UDim2.new(1,0,0,14); creditLbl.Position=UDim2.new(0,0,1,-20)
-creditLbl.BackgroundTransparency=1; creditLbl.Text="LBB · GALAXY EDITION"
-creditLbl.TextColor3=Color3.fromRGB(35,25,70); creditLbl.TextScaled=true
-creditLbl.Font=Enum.Font.Gotham; creditLbl.ZIndex=20; creditLbl.Parent=main
-
-print("🌌 LBB Desync — UI loaded, searching for RakNet...")
-
---==================================================
--- RAKNET DETECTION (runs AFTER UI is up)
--- All inside pcall so errors never kill the script
---==================================================
-local function updateUI()
-    if desynced then
-        statusDot.BackgroundColor3=Color3.fromRGB(255,70,70)
-        statusLbl.Text="ACTIVE"; statusLbl.TextColor3=Color3.fromRGB(255,70,70)
-        toggleBtn.Text="DEACTIVATE DESYNC"
-        btnBg.BackgroundColor3=Color3.fromRGB(110,15,35)
-        btnStroke.Color=Color3.fromRGB(255,60,80)
-        mainBorder.Color=Color3.fromRGB(220,40,70)
-        glowPurple.ImageColor3=Color3.fromRGB(180,20,50)
-    else
-        statusDot.BackgroundColor3=Color3.fromRGB(80,220,120)
-        statusLbl.Text="INACTIVE"; statusLbl.TextColor3=Color3.fromRGB(80,220,120)
-        if supported then
-            toggleBtn.Text="ACTIVATE DESYNC"
-            toggleBtn.TextColor3=Color3.new(1,1,1)
-            btnBg.BackgroundColor3=Color3.fromRGB(55,25,130)
-            btnStroke.Color=Color3.fromRGB(120,70,255)
-        else
-            toggleBtn.Text="RAKNET NOT FOUND"
-            toggleBtn.TextColor3=Color3.fromRGB(140,140,140)
-            btnBg.BackgroundColor3=Color3.fromRGB(40,40,40)
-            btnStroke.Color=Color3.fromRGB(80,80,80)
-        end
-        mainBorder.Color=Color3.fromRGB(90,50,200)
-        glowPurple.ImageColor3=Color3.fromRGB(100,40,220)
-    end
-end
-
-task.spawn(function()
-    task.wait(0.1) -- tiny wait so UI renders first
-
-    pcall(function()
-        -- Collect all envs safely
-        local envs = {}
-        pcall(function() envs[#envs+1] = getgenv() end)
-        pcall(function() envs[#envs+1] = getrenv() end)
-        pcall(function() envs[#envs+1] = getfenv() end)
-        pcall(function() envs[#envs+1] = _G end)
-
-        local pauseNames  = {"raknetpause","RakNetPause","raknet_pause","pauseraknet","networkpause","desync_pause"}
-        local resumeNames = {"raknetresume","RakNetResume","raknet_resume","resumeraknet","networkresume","desync_resume"}
-
-        -- Check raknet table first (Delta style)
-        for _, env in ipairs(envs) do
-            pcall(function()
-                local rn = env.raknet
-                if type(rn) == "table" then
-                    print("[LBB] Found raknet table:")
-                    pcall(function()
-                        for k,v in pairs(rn) do
-                            print("  raknet."..tostring(k).." = "..type(v))
-                        end
-                    end)
-                    -- desync subtable
-                    if type(rn.desync) == "table" then
-                        _pause  = rn.desync.pause  or rn.desync.enable  or rn.desync.start
-                        _resume = rn.desync.resume or rn.desync.disable or rn.desync.stop
-                    -- desync toggle function
-                    elseif type(rn.desync) == "function" then
-                        _pause  = function() rn.desync(true)  end
-                        _resume = function() rn.desync(false) end
-                    -- pause/resume directly on table
-                    elseif type(rn.pause)  == "function" then
-                        _pause  = rn.pause
-                        _resume = rn.resume
-                    -- method style
-                    elseif type(rn.Pause) == "function" then
-                        _pause  = function() rn:Pause()  end
-                        _resume = function() rn:Resume() end
-                    end
-                end
-            end)
-            if _pause then break end
-        end
-
-        -- Flat global names
-        if not _pause then
-            for _, env in ipairs(envs) do
-                pcall(function()
-                    for _, name in ipairs(pauseNames) do
-                        if type(env[name]) == "function" then
-                            _pause = env[name]
-                            print("[LBB] Found pause: "..name)
-                            break
-                        end
-                    end
-                end)
-                if _pause then break end
-            end
-        end
-        if not _resume then
-            for _, env in ipairs(envs) do
-                pcall(function()
-                    for _, name in ipairs(resumeNames) do
-                        if type(env[name]) == "function" then
-                            _resume = env[name]
-                            print("[LBB] Found resume: "..name)
-                            break
-                        end
-                    end
-                end)
-                if _resume then break end
-            end
-        end
-
-        -- Direct global fallback
-        if not _pause  then pcall(function() if type(raknetpause)=="function"  then _pause=raknetpause   end end) end
-        if not _resume then pcall(function() if type(raknetresume)=="function" then _resume=raknetresume end end) end
-        if not _pause  then pcall(function() if type(raknet)=="table" and type(raknet.pause)=="function"  then _pause=raknet.pause   end end) end
-        if not _resume then pcall(function() if type(raknet)=="table" and type(raknet.resume)=="function" then _resume=raknet.resume end end) end
-
-        supported = type(_pause)=="function" and type(_resume)=="function"
-
-        -- Update subtitle
-        if supported then
-            subLbl.Text = "RAKNET · READY ✅"
-            subLbl.TextColor3 = Color3.fromRGB(100,75,210)
-            print("[LBB] ✅ RakNet READY")
-        else
-            subLbl.Text = "RAKNET · NOT FOUND ❌"
-            subLbl.TextColor3 = Color3.fromRGB(255,80,80)
-            warn("[LBB] ❌ RakNet not found — dump your globals:")
-            warn('[LBB] for k,v in pairs(getgenv()) do print(k,type(v)) end')
-        end
-
-        updateUI()
-    end)
+btn.MouseButton1Click:Connect(function()
+    btn.Text = "CLICKED ✅"
+    print("Button works")
 end)
 
---==================================================
--- PAUSE / RESUME
---==================================================
-local function pauseNet()
-    if desynced or not supported then return end
-    local ok, err = pcall(_pause)
-    if ok then desynced=true; print("[LBB] DESYNCED")
-    else warn("[LBB] pause error: "..tostring(err)) end
-end
-
-local function resumeNet()
-    if not desynced then return end
-    pcall(_resume); desynced=false; print("[LBB] RESYNCED")
-end
-
-player.CharacterAdded:Connect(function(c)
-    character=c
-    if desynced then pcall(function() _resume() end); desynced=false end
-    updateUI()
-end)
-
---==================================================
--- BUTTON
---==================================================
-toggleBtn.MouseButton1Click:Connect(function()
-    if not supported then warn("[LBB] RakNet unavailable"); return end
-    TweenService:Create(btnBg,TweenInfo.new(0.07,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),
-        {Size=UDim2.new(0,212,0,48),Position=UDim2.new(0.5,-106,0,104)}):Play()
-    task.delay(0.07,function()
-        TweenService:Create(btnBg,TweenInfo.new(0.14,Enum.EasingStyle.Back,Enum.EasingDirection.Out),
-            {Size=UDim2.new(0,220,0,52),Position=UDim2.new(0.5,-110,0,102)}):Play()
-    end)
-    if desynced then resumeNet() else pauseNet() end
-    updateUI()
-end)
-
---==================================================
--- DRAGGABLE — header only
---==================================================
-local dragging,dragStart,startPos
-header.InputBegan:Connect(function(input)
-    if input.UserInputType==Enum.UserInputType.MouseButton1 then
-        dragging=true; dragStart=input.Position; startPos=main.Position
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType==Enum.UserInputType.MouseMovement then
-        local d=input.Position-dragStart
-        main.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end
-end)
-
---==================================================
--- KEYBINDS
---==================================================
-UserInputService.InputBegan:Connect(function(input,gp)
-    if listeningFor then
-        if input.UserInputType==Enum.UserInputType.Keyboard then
-            keybinds[listeningFor]=input.KeyCode
-            local ref=keyBtnRefs[listeningFor]
-            if ref then ref.badge.Text=input.KeyCode.Name; ref.badge.TextColor3=Color3.new(1,1,1); ref.stroke.Color=Color3.fromRGB(70,45,145) end
-            listeningFor=nil
-        end
-        return
-    end
-    if gp then return end
-    if input.KeyCode==keybinds.toggle then
-        if desynced then resumeNet() else pauseNet() end; updateUI()
-    elseif input.KeyCode==keybinds.panel then
-        gui.Enabled=not gui.Enabled
-    end
-end)
-
---==================================================
--- SAFETY
---==================================================
-RunService.Heartbeat:Connect(function()
-    if not desynced then return end
-    local char=player.Character; if not char then return end
-    local hum=char:FindFirstChildOfClass("Humanoid")
-    if hum and hum.Health<=0 then resumeNet(); updateUI() end
-end)
+print("LBB: UI created, parent = " .. tostring(gui.Parent))
+print("LBB: gui.Enabled = " .. tostring(gui.Enabled))
