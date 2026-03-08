@@ -45,7 +45,6 @@ local selStroke = Instance.new("UIStroke", selBox)
 selStroke.Color = Color3.fromRGB(90, 50, 200)
 selStroke.Thickness = 1.5
 
--- glow
 local sg = Instance.new("ImageLabel")
 sg.Size = UDim2.new(0, 280, 0, 200)
 sg.Position = UDim2.new(0.5, -140, 0.5, -100)
@@ -134,7 +133,6 @@ local pcBg, pcBtn, pcIcon, pcLbl, pcSk = mkSelBtn("PC", Color3.fromRGB(10,40,80)
 pcIcon.Text = "🖥"
 pcLbl.Text = "PC"
 
--- hover effects
 mobBtn.MouseEnter:Connect(function()
     TweenService:Create(mobBg, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(60,30,140)}):Play()
 end)
@@ -148,7 +146,6 @@ pcBtn.MouseLeave:Connect(function()
     TweenService:Create(pcBg, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(10,40,80)}):Play()
 end)
 
--- animate in
 selBox.Size = UDim2.new(0, 0, 0, 0)
 selBox.Position = UDim2.new(0.5, 0, 0.5, 0)
 TweenService:Create(selBox, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
@@ -156,7 +153,6 @@ TweenService:Create(selBox, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.Easin
     Position = UDim2.new(0.5, -130, 0.5, -90),
 }):Play()
 
--- wait for selection
 mobBtn.MouseButton1Click:Connect(function()
     if selectorDone then return end
     selectorDone = true
@@ -181,7 +177,6 @@ pcBtn.MouseButton1Click:Connect(function()
     selGui:Destroy()
 end)
 
--- wait until chosen
 repeat task.wait(0.05) until selectorDone
 
 --// SIZING
@@ -210,14 +205,21 @@ local function getNearestPrompt()
     return nearest
 end
 
+-- FIXED: set HoldDuration to 0 before firing so hold check is bypassed
 local function fireNearest()
     local prompt = getNearestPrompt()
-    if prompt then
-        pcall(function() fireproximityprompt(prompt) end)
-        print("[LBB] Fired proximity prompt: " .. prompt.Parent.Name)
-    else
+    if not prompt then
         print("[LBB] No prompt in range")
+        return
     end
+    pcall(function()
+        local originalHold = prompt.HoldDuration
+        prompt.HoldDuration = 0
+        fireproximityprompt(prompt)
+        task.wait(0.05)
+        prompt.HoldDuration = originalHold
+    end)
+    print("[LBB] Fired prompt: " .. prompt.Parent.Name)
 end
 
 --// STATE
@@ -396,12 +398,10 @@ local togBg, togBtn, togSk = mkBtn("ACTIVATE DESYNC", Color3.fromRGB(55,25,130),
 local tpBg, tpBtn, tpSk   = mkBtn("⚡ TELEPORT", Color3.fromRGB(10,45,80), Color3.fromRGB(50,160,255), yOff + BS + 8)
 tpBtn.TextColor3 = Color3.fromRGB(100, 200, 255)
 
--- Mobile: STEAL button fires nearest proximityprompt
--- PC: E key fires it (handled in keybinds below)
 local stealBg, stealBtn, stealSk
 if isMobile then
-    stealBg, stealBtn, stealSk = mkBtn("👋 STEAL", Color3.fromRGB(20,70,30), Color3.fromRGB(60,200,80), yOff + (BS+8)*2)
-    stealBtn.TextColor3 = Color3.fromRGB(100, 255, 130)
+    stealBg, stealBtn, stealSk = mkBtn("👋 STEAL", Color3.fromRGB(30,30,40), Color3.fromRGB(60,200,80), yOff + (BS+8)*2)
+    stealBtn.TextColor3 = Color3.fromRGB(100, 100, 120)
 
     stealBtn.MouseButton1Click:Connect(function()
         if not desynced then return end
@@ -416,7 +416,6 @@ if isMobile then
         fireNearest()
     end)
 
-    -- mobile hide button top right
     local hideBtn = Instance.new("TextButton")
     hideBtn.Size = UDim2.new(0, 50, 0, 20)
     hideBtn.Position = UDim2.new(1, -56, 0, 8)
@@ -434,7 +433,6 @@ if isMobile then
     end)
 end
 
--- keybind rows — PC only
 local keyRefs = {}
 local function mkRow(lbl, key, y)
     if isMobile then return end
