@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local player = Players.LocalPlayer
 
 local pg
@@ -20,6 +21,54 @@ local desynced = false
 local listening = nil
 local keybinds = { toggle = Enum.KeyCode.H, teleport = Enum.KeyCode.T, panel = Enum.KeyCode.U }
 local _pause, _resume, supported = nil, nil, false
+
+--// PROXIMITY PROMPT HOOK
+-- While desynced, intercept E key presses and fireproximityprompt directly
+-- This bypasses RakNet entirely so no snapback occurs
+local function getNearestPrompt()
+    local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+
+    local nearest, nearestDist = nil, math.huge
+    for _, prompt in ipairs(workspace:GetDescendants()) do
+        if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+            local part = prompt.Parent
+            if part and part:IsA("BasePart") then
+                local dist = (root.Position - part.Position).Magnitude
+                if dist <= prompt.MaxActivationDistance and dist < nearestDist then
+                    nearest = prompt
+                    nearestDist = dist
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+-- Hook E key while desynced to fireproximityprompt instead of normal interaction
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if desynced and input.KeyCode == Enum.KeyCode.E then
+        local prompt = getNearestPrompt()
+        if prompt then
+            pcall(function()
+                fireproximityprompt(prompt)
+            end)
+            print("[LBB] Fired proximity prompt: " .. prompt.Parent.Name)
+            return
+        end
+    end
+end)
+
+-- Also hook ProximityPromptService to intercept any prompt trigger while desynced
+ProximityPromptService.PromptTriggered:Connect(function(prompt, plr)
+    if plr == player and desynced then
+        -- re-fire via executor function to ensure it goes through without RakNet
+        pcall(function()
+            fireproximityprompt(prompt)
+        end)
+    end
+end)
 
 --// GUI
 local gui = Instance.new("ScreenGui")
@@ -306,25 +355,15 @@ local function pauseNet()
     if desynced or not supported then return end
     pcall(_pause); desynced = true; print("[LBB] DESYNCED")
 end
-
 local function resumeNet()
     if not desynced then return end
     pcall(_resume); desynced = false; print("[LBB] RESYNCED")
 end
-
---// TELEPORT — moves server pos to client pos cleanly
 local function teleport()
     if not supported then return end
-    local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    local savedCF = root and root.CFrame
-    -- resume so server accepts our real position
     if desynced then pcall(_resume) end
-    task.wait(0.1)
-    -- re-pause immediately and restore client position
-    pcall(_pause)
-    task.wait(0.05)
-    if root and savedCF then root.CFrame = savedCF end
-    desynced = true
+    task.wait()
+    pcall(_pause); desynced = true
     print("[LBB] TELEPORTED — server updated, re-paused")
     updateUI()
 end
@@ -335,8 +374,6 @@ player.CharacterAdded:Connect(function()
 end)
 
 --// HEARTBEAT
--- No pulse anymore — pulsing always causes snapback on Delta
--- Instead we just guard against death while desynced
 RunService.Heartbeat:Connect(function(dt)
     if not desynced then return end
     local c = player.Character; if not c then return end
