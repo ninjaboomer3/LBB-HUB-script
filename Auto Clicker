@@ -1,57 +1,39 @@
--- LocalScript: AutoClickerGUI (Mobile Friendly)
+-- LocalScript: AutoClickerGUI (Touch-Based, Mobile Safe)
 -- Place in StarterPlayer > StarterPlayerScripts
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local GuiService = game:GetService("GuiService")
-local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
-local mouse = player:GetMouse()
-
-local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
 -- === STATE ===
 local clicking = false
 local clickInterval = 0.1
-local hotkey = Enum.KeyCode.F6
-local clickMode = "Left"
+local touchX, touchY = 0, 0
+local fixedPosition = nil
+local waitingForTap = false
 local panelOpen = true
-
--- click position (updated by touch or mouse)
-local clickX, clickY = 0, 0
 
 -- === GUI SETUP ===
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "AutoClickerGUI"
 screenGui.ResetOnSpawn = false
-screenGui.IgnoreGuiInset = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- ============ MAIN PANEL ============
 local main = Instance.new("Frame")
-main.Name = "Main"
-main.Size = UDim2.new(0, 280, 0, 320)
-main.Position = UDim2.new(0.5, -140, 0.5, -160)
+main.Size = UDim2.new(0, 280, 0, 300)
+main.Position = UDim2.new(0.5, -140, 0.5, -150)
 main.BackgroundColor3 = Color3.fromRGB(30, 30, 34)
 main.BorderSizePixel = 0
-main.Active = true
 main.Parent = screenGui
 
 local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 14)
 mainCorner.Parent = main
 
-local mainStroke = Instance.new("UIStroke")
-mainStroke.Color = Color3.fromRGB(60, 60, 68)
-mainStroke.Thickness = 1.5
-mainStroke.Parent = main
-
--- Title bar (drag handle)
 local title = Instance.new("Frame")
-title.Name = "TitleBar"
 title.Size = UDim2.new(1, 0, 0, 46)
 title.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
 title.BorderSizePixel = 0
@@ -61,7 +43,6 @@ local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0, 14)
 titleCorner.Parent = title
 
--- cover bottom rounded corners of title bar so it looks flush
 local titleFix = Instance.new("Frame")
 titleFix.Size = UDim2.new(1, 0, 0, 14)
 titleFix.Position = UDim2.new(0, 0, 1, -14)
@@ -95,17 +76,14 @@ local minimizeCorner = Instance.new("UICorner")
 minimizeCorner.CornerRadius = UDim.new(0, 10)
 minimizeCorner.Parent = minimizeButton
 
--- Content container
 local content = Instance.new("Frame")
 content.Size = UDim2.new(1, -24, 1, -58)
 content.Position = UDim2.new(0, 12, 0, 50)
 content.BackgroundTransparency = 1
 content.Parent = main
 
--- Interval label
 local intervalLabel = Instance.new("TextLabel")
 intervalLabel.Size = UDim2.new(1, 0, 0, 22)
-intervalLabel.Position = UDim2.new(0, 0, 0, 0)
 intervalLabel.BackgroundTransparency = 1
 intervalLabel.Text = "Click Interval (seconds)"
 intervalLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -114,7 +92,6 @@ intervalLabel.TextSize = 14
 intervalLabel.TextXAlignment = Enum.TextXAlignment.Left
 intervalLabel.Parent = content
 
--- Interval stepper row: [ - ] [ 0.100 ] [ + ]
 local stepperRow = Instance.new("Frame")
 stepperRow.Size = UDim2.new(1, 0, 0, 48)
 stepperRow.Position = UDim2.new(0, 0, 0, 26)
@@ -123,7 +100,6 @@ stepperRow.Parent = content
 
 local minusBtn = Instance.new("TextButton")
 minusBtn.Size = UDim2.new(0, 48, 1, 0)
-minusBtn.Position = UDim2.new(0, 0, 0, 0)
 minusBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
 minusBtn.Text = "-"
 minusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -135,20 +111,19 @@ local minusCorner = Instance.new("UICorner")
 minusCorner.CornerRadius = UDim.new(0, 10)
 minusCorner.Parent = minusBtn
 
-local intervalBox = Instance.new("TextBox")
-intervalBox.Size = UDim2.new(1, -104, 1, 0)
-intervalBox.Position = UDim2.new(0, 54, 0, 0)
-intervalBox.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-intervalBox.Text = "0.100"
-intervalBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-intervalBox.Font = Enum.Font.GothamBold
-intervalBox.TextSize = 18
-intervalBox.ClearTextOnFocus = false
-intervalBox.Parent = stepperRow
+local intervalDisplay = Instance.new("TextLabel")
+intervalDisplay.Size = UDim2.new(1, -104, 1, 0)
+intervalDisplay.Position = UDim2.new(0, 54, 0, 0)
+intervalDisplay.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+intervalDisplay.Text = "0.100"
+intervalDisplay.TextColor3 = Color3.fromRGB(255, 255, 255)
+intervalDisplay.Font = Enum.Font.GothamBold
+intervalDisplay.TextSize = 18
+intervalDisplay.Parent = stepperRow
 
-local intervalBoxCorner = Instance.new("UICorner")
-intervalBoxCorner.CornerRadius = UDim.new(0, 10)
-intervalBoxCorner.Parent = intervalBox
+local intervalDisplayCorner = Instance.new("UICorner")
+intervalDisplayCorner.CornerRadius = UDim.new(0, 10)
+intervalDisplayCorner.Parent = intervalDisplay
 
 local plusBtn = Instance.new("TextButton")
 plusBtn.Size = UDim2.new(0, 48, 1, 0)
@@ -165,56 +140,22 @@ plusCorner.CornerRadius = UDim.new(0, 10)
 plusCorner.Parent = plusBtn
 
 local function updateIntervalDisplay()
-	intervalBox.Text = string.format("%.3f", clickInterval)
+	intervalDisplay.Text = string.format("%.3f", clickInterval)
 end
 
-minusBtn.MouseButton1Click:Connect(function()
+minusBtn.Activated:Connect(function()
 	clickInterval = math.max(0.01, clickInterval - 0.01)
 	updateIntervalDisplay()
 end)
 
-plusBtn.MouseButton1Click:Connect(function()
+plusBtn.Activated:Connect(function()
 	clickInterval = clickInterval + 0.01
 	updateIntervalDisplay()
 end)
 
-intervalBox.FocusLost:Connect(function()
-	local n = tonumber(intervalBox.Text)
-	if n and n > 0 then
-		clickInterval = n
-	end
-	updateIntervalDisplay()
-end)
-
--- Click mode toggle
-local modeButton = Instance.new("TextButton")
-modeButton.Size = UDim2.new(1, 0, 0, 48)
-modeButton.Position = UDim2.new(0, 0, 0, 84)
-modeButton.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-modeButton.Text = "Mode: Left Click"
-modeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-modeButton.Font = Enum.Font.Gotham
-modeButton.TextSize = 16
-modeButton.Parent = content
-
-local modeCorner = Instance.new("UICorner")
-modeCorner.CornerRadius = UDim.new(0, 10)
-modeCorner.Parent = modeButton
-
-modeButton.MouseButton1Click:Connect(function()
-	if clickMode == "Left" then
-		clickMode = "Right"
-		modeButton.Text = "Mode: Right Click"
-	else
-		clickMode = "Left"
-		modeButton.Text = "Mode: Left Click"
-	end
-end)
-
--- Click target: "Set Position" button — mobile users tap this, then tap the screen
 local setPosButton = Instance.new("TextButton")
 setPosButton.Size = UDim2.new(1, 0, 0, 48)
-setPosButton.Position = UDim2.new(0, 0, 0, 140)
+setPosButton.Position = UDim2.new(0, 0, 0, 84)
 setPosButton.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
 setPosButton.Text = "🎯 Set Click Position"
 setPosButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -228,26 +169,22 @@ setPosCorner.Parent = setPosButton
 
 local positionLabel = Instance.new("TextLabel")
 positionLabel.Size = UDim2.new(1, 0, 0, 18)
-positionLabel.Position = UDim2.new(0, 0, 0, 190)
+positionLabel.Position = UDim2.new(0, 0, 0, 134)
 positionLabel.BackgroundTransparency = 1
-positionLabel.Text = "Position: (current touch/mouse)"
+positionLabel.Text = "Position: not set"
 positionLabel.TextColor3 = Color3.fromRGB(150, 150, 155)
 positionLabel.Font = Enum.Font.Gotham
 positionLabel.TextSize = 12
 positionLabel.Parent = content
 
-local waitingForTap = false
-local fixedPosition = nil -- nil = follow finger/mouse live
-
-setPosButton.MouseButton1Click:Connect(function()
+setPosButton.Activated:Connect(function()
 	waitingForTap = true
 	setPosButton.Text = "Tap anywhere on screen..."
 end)
 
--- Start/Stop button (big, thumb-friendly)
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(1, 0, 0, 56)
-toggleButton.Position = UDim2.new(0, 0, 0, 214)
+toggleButton.Position = UDim2.new(0, 0, 0, 158)
 toggleButton.BackgroundColor3 = Color3.fromRGB(40, 160, 70)
 toggleButton.Text = "▶ START"
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -259,12 +196,11 @@ local toggleCorner = Instance.new("UICorner")
 toggleCorner.CornerRadius = UDim.new(0, 12)
 toggleCorner.Parent = toggleButton
 
--- Clear position button
 local clearPosButton = Instance.new("TextButton")
 clearPosButton.Size = UDim2.new(1, 0, 0, 40)
-clearPosButton.Position = UDim2.new(0, 0, 0, 278)
+clearPosButton.Position = UDim2.new(0, 0, 0, 222)
 clearPosButton.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-clearPosButton.Text = "Clear Fixed Position (follow finger)"
+clearPosButton.Text = "Clear Fixed Position"
 clearPosButton.TextColor3 = Color3.fromRGB(200, 200, 200)
 clearPosButton.Font = Enum.Font.Gotham
 clearPosButton.TextSize = 13
@@ -274,32 +210,24 @@ local clearPosCorner = Instance.new("UICorner")
 clearPosCorner.CornerRadius = UDim.new(0, 10)
 clearPosCorner.Parent = clearPosButton
 
-clearPosButton.MouseButton1Click:Connect(function()
+clearPosButton.Activated:Connect(function()
 	fixedPosition = nil
-	positionLabel.Text = "Position: (current touch/mouse)"
+	positionLabel.Text = "Position: not set"
 end)
 
-main.Size = UDim2.new(0, 280, 0, 334)
+main.Size = UDim2.new(0, 280, 0, 274)
 
--- ============ FLOATING BUBBLE (quick access, works when panel minimized) ============
+-- ============ FLOATING BUBBLE ============
 local bubble = Instance.new("Frame")
-bubble.Name = "Bubble"
 bubble.Size = UDim2.new(0, 64, 0, 64)
 bubble.Position = UDim2.new(1, -84, 0.5, -32)
 bubble.BackgroundColor3 = Color3.fromRGB(40, 160, 70)
 bubble.Visible = false
-bubble.Active = true
 bubble.Parent = screenGui
 
 local bubbleCorner = Instance.new("UICorner")
 bubbleCorner.CornerRadius = UDim.new(1, 0)
 bubbleCorner.Parent = bubble
-
-local bubbleStroke = Instance.new("UIStroke")
-bubbleStroke.Color = Color3.fromRGB(255, 255, 255)
-bubbleStroke.Thickness = 2
-bubbleStroke.Transparency = 0.5
-bubbleStroke.Parent = bubble
 
 local bubbleIcon = Instance.new("TextButton")
 bubbleIcon.Size = UDim2.new(1, 0, 1, 0)
@@ -310,54 +238,44 @@ bubbleIcon.Font = Enum.Font.GothamBold
 bubbleIcon.TextSize = 24
 bubbleIcon.Parent = bubble
 
-local bubbleDragging = false
-local bubbleDidDrag = false
-
--- ============ CUSTOM TOUCH/MOUSE DRAGGING ============
-local function makeDraggable(dragHandle, target, onDragStateChanged)
+-- ============ TOUCH-ONLY DRAGGING (uses TouchTap/TouchPan-style manual tracking) ============
+local function makeDraggableTouch(handle, target)
 	local dragging = false
-	local dragStart = nil
-	local startPos = nil
+	local startTouchPos = nil
+	local startFramePos = nil
 	local moved = false
 
-	dragHandle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			moved = false
-			dragStart = input.Position
-			startPos = target.Position
-			if onDragStateChanged then onDragStateChanged(true) end
+	handle.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		dragging = true
+		moved = false
+		startTouchPos = input.Position
+		startFramePos = target.Position
 
-			local conn
-			conn = input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-					if onDragStateChanged then onDragStateChanged(false, moved) end
-					conn:Disconnect()
-				end
-			end)
-		end
+		local conn
+		conn = input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+				conn:Disconnect()
+			end
+		end)
 	end)
 
-	dragHandle.InputChanged:Connect(function(input)
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local delta = input.Position - dragStart
-			if delta.Magnitude > 3 then moved = true end
-			target.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + delta.X,
-				startPos.Y.Scale, startPos.Y.Offset + delta.Y
-			)
-		end
+	handle.InputChanged:Connect(function(input)
+		if not dragging or input.UserInputType ~= Enum.UserInputType.Touch then return end
+		local delta = input.Position - startTouchPos
+		if delta.Magnitude > 3 then moved = true end
+		target.Position = UDim2.new(
+			startFramePos.X.Scale, startFramePos.X.Offset + delta.X,
+			startFramePos.Y.Scale, startFramePos.Y.Offset + delta.Y
+		)
 	end)
+
+	return function() return moved end
 end
 
-makeDraggable(title, main)
-makeDraggable(bubbleIcon, bubble, function(isDragging, wasMoved)
-	bubbleDragging = isDragging
-	if not isDragging then
-		bubbleDidDrag = wasMoved
-	end
-end)
+makeDraggableTouch(title, main)
+local bubbleWasDragged = makeDraggableTouch(bubbleIcon, bubble)
 
 -- ============ MINIMIZE / RESTORE ============
 local function setPanelOpen(state)
@@ -366,37 +284,47 @@ local function setPanelOpen(state)
 	bubble.Visible = not state
 end
 
-minimizeButton.MouseButton1Click:Connect(function()
+minimizeButton.Activated:Connect(function()
 	setPanelOpen(false)
 end)
 
-bubbleIcon.MouseButton1Click:Connect(function()
-	if bubbleDidDrag then
-		bubbleDidDrag = false
-		return
-	end
+bubbleIcon.Activated:Connect(function()
+	if bubbleWasDragged() then return end
 	setPanelOpen(true)
 end)
 
--- ============ CLICK LOGIC ============
-local function getClickPosition()
+local quickToggle = Instance.new("TextButton")
+quickToggle.Size = UDim2.new(0, 26, 0, 26)
+quickToggle.Position = UDim2.new(1, -10, 1, -10)
+quickToggle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+quickToggle.Text = "⏻"
+quickToggle.TextColor3 = Color3.fromRGB(30, 30, 34)
+quickToggle.Font = Enum.Font.GothamBold
+quickToggle.TextSize = 14
+quickToggle.ZIndex = 5
+quickToggle.Parent = bubble
+
+local quickToggleCorner = Instance.new("UICorner")
+quickToggleCorner.CornerRadius = UDim.new(1, 0)
+quickToggleCorner.Parent = quickToggle
+
+quickToggle.Activated:Connect(function()
+	clicking = not clicking
+end)
+
+-- ============ TOUCH-BASED CLICK SIMULATION ============
+local function performTouchTap(x, y)
+	local touchId = 0
+	VirtualInputManager:SendTouchEvent(Vector2.new(x, y), Enum.UserInputState.Begin, game)
+	task.wait()
+	VirtualInputManager:SendTouchEvent(Vector2.new(x, y), Enum.UserInputState.End, game)
+end
+
+local function getTapPosition()
 	if fixedPosition then
 		return fixedPosition.X, fixedPosition.Y
 	end
-	return clickX, clickY
-end
-
-local function performClick()
-	local x, y = getClickPosition()
-	if x == 0 and y == 0 then return end
-
-	if clickMode == "Left" then
-		VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-		VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
-	else
-		VirtualInputManager:SendMouseButtonEvent(x, y, 1, true, game, 0)
-		VirtualInputManager:SendMouseButtonEvent(x, y, 1, false, game, 0)
-	end
+	return touchX, touchY
 end
 
 local function updateToggleVisuals()
@@ -413,95 +341,48 @@ local function updateToggleVisuals()
 	end
 end
 
-local function setClicking(state)
-	clicking = state
-	updateToggleVisuals()
+toggleButton.Activated:Connect(function()
+	clicking = not clicking
+end)
 
-	if clicking then
-		task.spawn(function()
-			while clicking do
-				performClick()
-				task.wait(clickInterval)
+task.spawn(function()
+	while true do
+		updateToggleVisuals()
+		if clicking then
+			local x, y = getTapPosition()
+			if x ~= 0 or y ~= 0 then
+				performTouchTap(x, y)
 			end
-		end)
-	end
-end
-
-toggleButton.MouseButton1Click:Connect(function()
-	setClicking(not clicking)
-end)
-
-bubbleIcon.MouseButton1Click:Connect(function()
-	-- handled above for restoring panel; also toggle click if bubble tapped without drag and panel already open
-end)
-
--- Long-press bubble alternative: tap bubble while panel closed also toggles clicking with double logic
-local bubbleTapCount = 0
-bubbleIcon.MouseButton1Click:Connect(function()
-	if bubbleDidDrag then return end
-	if not panelOpen then
-		-- single tap on bubble toggles clicking directly (quick access)
+		end
+		task.wait(clickInterval)
 	end
 end)
 
--- Simpler: separate small toggle inside bubble via long press is complex; instead make bubble tap = restore panel,
--- and add a second smaller "quick toggle" ring button on the bubble corner:
-local quickToggle = Instance.new("TextButton")
-quickToggle.Size = UDim2.new(0, 26, 0, 26)
-quickToggle.Position = UDim2.new(1, -10, 1, -10)
-quickToggle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-quickToggle.Text = "⏻"
-quickToggle.TextColor3 = Color3.fromRGB(30, 30, 34)
-quickToggle.Font = Enum.Font.GothamBold
-quickToggle.TextSize = 14
-quickToggle.ZIndex = 5
-quickToggle.Parent = bubble
-
-local quickToggleCorner = Instance.new("UICorner")
-quickToggleCorner.CornerRadius = UDim.new(1, 0)
-quickToggleCorner.Parent = quickToggle
-
-quickToggle.MouseButton1Click:Connect(function()
-	setClicking(not clicking)
-end)
-
--- ============ INPUT TRACKING (touch + mouse position, and tap-to-set-position) ============
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if input.UserInputType == Enum.UserInputType.Touch then
-		clickX, clickY = input.Position.X, input.Position.Y
-	elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
-		clickX, clickY = input.Position.X, input.Position.Y
-	end
+-- ============ TRACK TOUCH POSITION + TAP-TO-SET ============
+UserInputService.TouchTap:Connect(function(touchPositions, gameProcessed)
+	if #touchPositions == 0 then return end
+	local pos = touchPositions[1]
+	touchX, touchY = pos.X, pos.Y
 
 	if waitingForTap and not gameProcessed then
-		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-			fixedPosition = Vector2.new(input.Position.X, input.Position.Y)
-			positionLabel.Text = string.format("Position: (%d, %d) [fixed]", fixedPosition.X, fixedPosition.Y)
-			setPosButton.Text = "🎯 Set Click Position"
-			waitingForTap = false
-			return
-		end
+		fixedPosition = Vector2.new(pos.X, pos.Y)
+		positionLabel.Text = string.format("Position: (%d, %d) [fixed]", fixedPosition.X, fixedPosition.Y)
+		setPosButton.Text = "🎯 Set Click Position"
+		waitingForTap = false
 	end
+end)
 
-	-- desktop hotkey still works if keyboard present
-	if not gameProcessed and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == hotkey then
-		setClicking(not clicking)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if input.UserInputType == Enum.UserInputType.Touch then
+		touchX, touchY = input.Position.X, input.Position.Y
 	end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement then
-		clickX, clickY = input.Position.X, input.Position.Y
+	if input.UserInputType == Enum.UserInputType.Touch then
+		touchX, touchY = input.Position.X, input.Position.Y
 	end
 end)
 
--- ============ SAFE AREA HANDLING (notches / home indicator) ============
-local function applySafeInsets()
-	local insets = GuiService:GetGuiInset()
-	-- keep bubble within safe bounds when screen rotates
-end
-applySafeInsets()
-
--- initialize
 updateIntervalDisplay()
 updateToggleVisuals()
