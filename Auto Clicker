@@ -1,4 +1,4 @@
--- LocalScript: AutoClickerGUI (Touch-Based, Mobile Safe)
+-- LocalScript: AutoClickerGUI (Persistent Draggable Target, Touch-Based)
 -- Place in StarterPlayer > StarterPlayerScripts
 
 local Players = game:GetService("Players")
@@ -10,9 +10,6 @@ local player = Players.LocalPlayer
 -- === STATE ===
 local clicking = false
 local clickInterval = 0.1
-local touchX, touchY = 0, 0
-local fixedPosition = nil
-local waitingForTap = false
 local panelOpen = true
 
 -- === GUI SETUP ===
@@ -20,11 +17,84 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "AutoClickerGUI"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.DisplayOrder = 999
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
+-- ============ PERSISTENT DRAGGABLE TARGET (never disappears) ============
+local target = Instance.new("Frame")
+target.Name = "ClickTarget"
+target.Size = UDim2.new(0, 56, 0, 56)
+target.Position = UDim2.new(0.5, -28, 0.5, -28)
+target.BackgroundTransparency = 1
+target.ZIndex = 10
+target.Parent = screenGui
+
+local ringOuter = Instance.new("Frame")
+ringOuter.Size = UDim2.new(1, 0, 1, 0)
+ringOuter.BackgroundTransparency = 1
+ringOuter.ZIndex = 10
+ringOuter.Parent = target
+
+local ringStroke = Instance.new("UIStroke")
+ringStroke.Color = Color3.fromRGB(255, 60, 60)
+ringStroke.Thickness = 3
+ringStroke.Parent = ringOuter
+
+local ringCorner = Instance.new("UICorner")
+ringCorner.CornerRadius = UDim.new(1, 0)
+ringCorner.Parent = ringOuter
+
+local ringFill = Instance.new("Frame")
+ringFill.Size = UDim2.new(1, 0, 1, 0)
+ringFill.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+ringFill.BackgroundTransparency = 0.75
+ringFill.ZIndex = 10
+ringFill.Parent = ringOuter
+
+local ringFillCorner = Instance.new("UICorner")
+ringFillCorner.CornerRadius = UDim.new(1, 0)
+ringFillCorner.Parent = ringFill
+
+local crosshairV = Instance.new("Frame")
+crosshairV.Size = UDim2.new(0, 2, 0, 20)
+crosshairV.Position = UDim2.new(0.5, -1, 0.5, -10)
+crosshairV.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+crosshairV.BorderSizePixel = 0
+crosshairV.ZIndex = 11
+crosshairV.Parent = target
+
+local crosshairH = Instance.new("Frame")
+crosshairH.Size = UDim2.new(0, 20, 0, 2)
+crosshairH.Position = UDim2.new(0.5, -10, 0.5, -1)
+crosshairH.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+crosshairH.BorderSizePixel = 0
+crosshairH.ZIndex = 11
+crosshairH.Parent = target
+
+local targetGrab = Instance.new("TextButton")
+targetGrab.Size = UDim2.new(1, 20, 1, 20)
+targetGrab.Position = UDim2.new(0, -10, 0, -10)
+targetGrab.BackgroundTransparency = 1
+targetGrab.Text = ""
+targetGrab.ZIndex = 12
+targetGrab.Parent = target
+
+local pulseLabel = Instance.new("TextLabel")
+pulseLabel.Size = UDim2.new(0, 120, 0, 20)
+pulseLabel.Position = UDim2.new(0.5, -60, 1, 4)
+pulseLabel.BackgroundTransparency = 1
+pulseLabel.Text = "Drag me"
+pulseLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+pulseLabel.Font = Enum.Font.GothamBold
+pulseLabel.TextSize = 12
+pulseLabel.TextStrokeTransparency = 0
+pulseLabel.ZIndex = 11
+pulseLabel.Parent = target
+
+-- ============ MAIN PANEL ============
 local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 280, 0, 300)
-main.Position = UDim2.new(0.5, -140, 0.5, -150)
+main.Size = UDim2.new(0, 280, 0, 220)
+main.Position = UDim2.new(0.5, -140, 0, 40)
 main.BackgroundColor3 = Color3.fromRGB(30, 30, 34)
 main.BorderSizePixel = 0
 main.Parent = screenGui
@@ -153,38 +223,9 @@ plusBtn.Activated:Connect(function()
 	updateIntervalDisplay()
 end)
 
-local setPosButton = Instance.new("TextButton")
-setPosButton.Size = UDim2.new(1, 0, 0, 48)
-setPosButton.Position = UDim2.new(0, 0, 0, 84)
-setPosButton.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-setPosButton.Text = "🎯 Set Click Position"
-setPosButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-setPosButton.Font = Enum.Font.Gotham
-setPosButton.TextSize = 16
-setPosButton.Parent = content
-
-local setPosCorner = Instance.new("UICorner")
-setPosCorner.CornerRadius = UDim.new(0, 10)
-setPosCorner.Parent = setPosButton
-
-local positionLabel = Instance.new("TextLabel")
-positionLabel.Size = UDim2.new(1, 0, 0, 18)
-positionLabel.Position = UDim2.new(0, 0, 0, 134)
-positionLabel.BackgroundTransparency = 1
-positionLabel.Text = "Position: not set"
-positionLabel.TextColor3 = Color3.fromRGB(150, 150, 155)
-positionLabel.Font = Enum.Font.Gotham
-positionLabel.TextSize = 12
-positionLabel.Parent = content
-
-setPosButton.Activated:Connect(function()
-	waitingForTap = true
-	setPosButton.Text = "Tap anywhere on screen..."
-end)
-
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(1, 0, 0, 56)
-toggleButton.Position = UDim2.new(0, 0, 0, 158)
+toggleButton.Position = UDim2.new(0, 0, 0, 84)
 toggleButton.BackgroundColor3 = Color3.fromRGB(40, 160, 70)
 toggleButton.Text = "▶ START"
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -196,33 +237,26 @@ local toggleCorner = Instance.new("UICorner")
 toggleCorner.CornerRadius = UDim.new(0, 12)
 toggleCorner.Parent = toggleButton
 
-local clearPosButton = Instance.new("TextButton")
-clearPosButton.Size = UDim2.new(1, 0, 0, 40)
-clearPosButton.Position = UDim2.new(0, 0, 0, 222)
-clearPosButton.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-clearPosButton.Text = "Clear Fixed Position"
-clearPosButton.TextColor3 = Color3.fromRGB(200, 200, 200)
-clearPosButton.Font = Enum.Font.Gotham
-clearPosButton.TextSize = 13
-clearPosButton.Parent = content
+local hintLabel = Instance.new("TextLabel")
+hintLabel.Size = UDim2.new(1, 0, 0, 40)
+hintLabel.Position = UDim2.new(0, 0, 0, 148)
+hintLabel.BackgroundTransparency = 1
+hintLabel.Text = "Drag the red target anywhere on screen — it always stays visible and marks where clicks fire."
+hintLabel.TextColor3 = Color3.fromRGB(150, 150, 155)
+hintLabel.Font = Enum.Font.Gotham
+hintLabel.TextSize = 12
+hintLabel.TextWrapped = true
+hintLabel.Parent = content
 
-local clearPosCorner = Instance.new("UICorner")
-clearPosCorner.CornerRadius = UDim.new(0, 10)
-clearPosCorner.Parent = clearPosButton
-
-clearPosButton.Activated:Connect(function()
-	fixedPosition = nil
-	positionLabel.Text = "Position: not set"
-end)
-
-main.Size = UDim2.new(0, 280, 0, 274)
+main.Size = UDim2.new(0, 280, 0, 200)
 
 -- ============ FLOATING BUBBLE ============
 local bubble = Instance.new("Frame")
-bubble.Size = UDim2.new(0, 64, 0, 64)
-bubble.Position = UDim2.new(1, -84, 0.5, -32)
+bubble.Size = UDim2.new(0, 60, 0, 60)
+bubble.Position = UDim2.new(1, -80, 0.15, 0)
 bubble.BackgroundColor3 = Color3.fromRGB(40, 160, 70)
 bubble.Visible = false
+bubble.ZIndex = 9
 bubble.Parent = screenGui
 
 local bubbleCorner = Instance.new("UICorner")
@@ -235,37 +269,42 @@ bubbleIcon.BackgroundTransparency = 1
 bubbleIcon.Text = "▶"
 bubbleIcon.TextColor3 = Color3.fromRGB(255, 255, 255)
 bubbleIcon.Font = Enum.Font.GothamBold
-bubbleIcon.TextSize = 24
+bubbleIcon.TextSize = 22
+bubbleIcon.ZIndex = 9
 bubbleIcon.Parent = bubble
 
--- ============ TOUCH-ONLY DRAGGING (uses TouchTap/TouchPan-style manual tracking) ============
-local function makeDraggableTouch(handle, target)
+-- ============ TOUCH DRAG HELPER ============
+local function makeDraggableTouch(handle, targetFrame, onlyPrimaryTouch)
 	local dragging = false
+	local activeTouchId = nil
 	local startTouchPos = nil
 	local startFramePos = nil
 	local moved = false
 
 	handle.InputBegan:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if dragging then return end -- ignore extra fingers
 		dragging = true
 		moved = false
+		activeTouchId = input
 		startTouchPos = input.Position
-		startFramePos = target.Position
+		startFramePos = targetFrame.Position
 
 		local conn
 		conn = input.Changed:Connect(function()
 			if input.UserInputState == Enum.UserInputState.End then
 				dragging = false
+				activeTouchId = nil
 				conn:Disconnect()
 			end
 		end)
 	end)
 
 	handle.InputChanged:Connect(function(input)
-		if not dragging or input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if not dragging or input ~= activeTouchId then return end
 		local delta = input.Position - startTouchPos
 		if delta.Magnitude > 3 then moved = true end
-		target.Position = UDim2.new(
+		targetFrame.Position = UDim2.new(
 			startFramePos.X.Scale, startFramePos.X.Offset + delta.X,
 			startFramePos.Y.Scale, startFramePos.Y.Offset + delta.Y
 		)
@@ -276,6 +315,7 @@ end
 
 makeDraggableTouch(title, main)
 local bubbleWasDragged = makeDraggableTouch(bubbleIcon, bubble)
+makeDraggableTouch(targetGrab, target)
 
 -- ============ MINIMIZE / RESTORE ============
 local function setPanelOpen(state)
@@ -294,37 +334,32 @@ bubbleIcon.Activated:Connect(function()
 end)
 
 local quickToggle = Instance.new("TextButton")
-quickToggle.Size = UDim2.new(0, 26, 0, 26)
-quickToggle.Position = UDim2.new(1, -10, 1, -10)
+quickToggle.Size = UDim2.new(0, 24, 0, 24)
+quickToggle.Position = UDim2.new(1, -8, 1, -8)
 quickToggle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 quickToggle.Text = "⏻"
 quickToggle.TextColor3 = Color3.fromRGB(30, 30, 34)
 quickToggle.Font = Enum.Font.GothamBold
-quickToggle.TextSize = 14
-quickToggle.ZIndex = 5
+quickToggle.TextSize = 13
+quickToggle.ZIndex = 10
 quickToggle.Parent = bubble
 
 local quickToggleCorner = Instance.new("UICorner")
 quickToggleCorner.CornerRadius = UDim.new(1, 0)
 quickToggleCorner.Parent = quickToggle
 
-quickToggle.Activated:Connect(function()
-	clicking = not clicking
-end)
-
--- ============ TOUCH-BASED CLICK SIMULATION ============
-local function performTouchTap(x, y)
-	local touchId = 0
-	VirtualInputManager:SendTouchEvent(Vector2.new(x, y), Enum.UserInputState.Begin, game)
-	task.wait()
-	VirtualInputManager:SendTouchEvent(Vector2.new(x, y), Enum.UserInputState.End, game)
+-- ============ CLICK EXECUTION ============
+local function getTargetScreenPos()
+	-- absolute position of target CENTER, accounting for anchor
+	local pos = target.AbsolutePosition
+	local size = target.AbsoluteSize
+	return pos.X + size.X / 2, pos.Y + size.Y / 2
 end
 
-local function getTapPosition()
-	if fixedPosition then
-		return fixedPosition.X, fixedPosition.Y
-	end
-	return touchX, touchY
+local function performTouchTap(x, y)
+	VirtualInputManager:SendTouchEvent(Vector2.new(x, y), Enum.UserInputState.Begin, game)
+	task.wait(0.03)
+	VirtualInputManager:SendTouchEvent(Vector2.new(x, y), Enum.UserInputState.End, game)
 end
 
 local function updateToggleVisuals()
@@ -333,54 +368,47 @@ local function updateToggleVisuals()
 		toggleButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
 		bubble.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
 		bubbleIcon.Text = "■"
+		ringStroke.Color = Color3.fromRGB(60, 220, 100)
+		ringFill.BackgroundColor3 = Color3.fromRGB(60, 220, 100)
+		crosshairV.BackgroundColor3 = Color3.fromRGB(60, 220, 100)
+		crosshairH.BackgroundColor3 = Color3.fromRGB(60, 220, 100)
 	else
 		toggleButton.Text = "▶ START"
 		toggleButton.BackgroundColor3 = Color3.fromRGB(40, 160, 70)
 		bubble.BackgroundColor3 = Color3.fromRGB(40, 160, 70)
 		bubbleIcon.Text = "▶"
+		ringStroke.Color = Color3.fromRGB(255, 60, 60)
+		ringFill.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+		crosshairV.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+		crosshairH.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
 	end
 end
 
+local function setClicking(state)
+	clicking = state
+	updateToggleVisuals()
+end
+
 toggleButton.Activated:Connect(function()
-	clicking = not clicking
+	setClicking(not clicking)
+end)
+
+quickToggle.Activated:Connect(function()
+	setClicking(not clicking)
 end)
 
 task.spawn(function()
 	while true do
-		updateToggleVisuals()
 		if clicking then
-			local x, y = getTapPosition()
-			if x ~= 0 or y ~= 0 then
-				performTouchTap(x, y)
+			local x, y = getTargetScreenPos()
+			local ok, err = pcall(performTouchTap, x, y)
+			if not ok then
+				warn("[AutoClicker] Click failed: " .. tostring(err))
 			end
+			task.wait(clickInterval)
+		else
+			task.wait(0.05)
 		end
-		task.wait(clickInterval)
-	end
-end)
-
--- ============ TRACK TOUCH POSITION + TAP-TO-SET ============
-UserInputService.TouchTap:Connect(function(touchPositions, gameProcessed)
-	if #touchPositions == 0 then return end
-	local pos = touchPositions[1]
-	touchX, touchY = pos.X, pos.Y
-
-	if waitingForTap and not gameProcessed then
-		fixedPosition = Vector2.new(pos.X, pos.Y)
-		positionLabel.Text = string.format("Position: (%d, %d) [fixed]", fixedPosition.X, fixedPosition.Y)
-		setPosButton.Text = "🎯 Set Click Position"
-		waitingForTap = false
-	end
-end)
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if input.UserInputType == Enum.UserInputType.Touch then
-		touchX, touchY = input.Position.X, input.Position.Y
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.Touch then
-		touchX, touchY = input.Position.X, input.Position.Y
 	end
 end)
 
